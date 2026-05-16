@@ -117,9 +117,9 @@ GitHub native の ruleset では、reviewed Pull Request merge を **UI から�
 ## 8. 変更後の確認
 
 ```powershell
-dotnet build .\templates\dotnet8\PokenaeTemplate.sln
-dotnet test .\templates\dotnet8\PokenaeTemplate.Tests\PokenaeTemplate.Tests.csproj
-dotnet build .\templates\dotnet10\PokenaeTemplate.sln
-dotnet test .\templates\dotnet10\PokenaeTemplate.Tests\PokenaeTemplate.Tests.csproj
+dotnet build .\templates\dotnet8\PokemonDamageCalculatorForStory.sln
+dotnet test .\templates\dotnet8\PokemonDamageCalculatorForStory.Tests\PokemonDamageCalculatorForStory.Tests.csproj
+dotnet build .\templates\dotnet10\PokemonDamageCalculatorForStory.sln
+dotnet test .\templates\dotnet10\PokemonDamageCalculatorForStory.Tests\PokemonDamageCalculatorForStory.Tests.csproj
 docker build -f .\.devcontainer\Dockerfile .
 ```

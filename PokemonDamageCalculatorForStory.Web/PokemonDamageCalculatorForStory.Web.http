@@ -1,0 +1,6 @@
+@PokemonDamageCalculatorForStory_HostAddress = http://localhost:5038
+
+GET {{PokemonDamageCalculatorForStory_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

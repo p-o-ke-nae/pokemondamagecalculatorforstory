@@ -1,6 +1,0 @@
-﻿@PokenaeTemplate_HostAddress = http://localhost:5038
-
-GET {{PokenaeTemplate_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###
