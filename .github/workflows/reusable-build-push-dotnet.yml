@@ -1,0 +1,179 @@
+name: Reusable Build and Push (.NET)
+
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        required: true
+        type: string
+      environment:
+        required: true
+        type: string
+      dockerfile:
+        required: false
+        type: string
+        default: ""
+        description: "使用する Dockerfile のパス。未指定時はアプリ用 Dockerfile を自動検出"
+      project_path:
+        required: false
+        type: string
+        default: ""
+        description: ".csproj ファイルへのパス（Dockerfile の PROJECT_PATH ARG）"
+      app_dll:
+        required: false
+        type: string
+        default: ""
+        description: "実行時 DLL 名（Dockerfile の APP_DLL ARG）"
+    outputs:
+      image_tag:
+        description: Docker image tag
+        value: ${{ jobs.build.outputs.image_tag }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.meta-info.outputs.image_tag }}
+
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Set metadata output values
+        id: meta-info
+        run: |
+          set -euo pipefail
+          echo "image_tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ inputs.image_tag }}
+            type=sha,prefix=,format=short
+
+      - name: Resolve Dockerfile path
+        id: dockerfile
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          requested='${{ inputs.dockerfile }}'
+          normalized=""
+          if [ -n "$requested" ]; then
+            normalized="${requested#./}"
+          fi
+
+          mapfile -t preferred_candidates < <(find . -maxdepth 2 -type f -path './*.Web/Dockerfile' | sort)
+          mapfile -t generic_candidates < <(find . -maxdepth 2 -type f \( -name 'Dockerfile' -o -name 'Dockerfile.*' \) ! -path './.devcontainer/*' | sort)
+          mapfile -t all_candidates < <(find . -maxdepth 2 -type f \( -name 'Dockerfile' -o -name 'Dockerfile.*' \) | sort)
+
+          if [ -n "$requested" ] && [ -f "$requested" ]; then
+            resolved="$requested"
+          elif [ -n "$normalized" ] && [ -f "$normalized" ]; then
+            resolved="$normalized"
+          elif [ "${#preferred_candidates[@]}" -eq 1 ]; then
+            resolved="${preferred_candidates[0]}"
+            if [ -n "$requested" ]; then
+              echo "[WARN] Requested Dockerfile '$requested' was not found. Falling back to application Dockerfile '$resolved'."
+            else
+              echo "[INFO] Auto-detected application Dockerfile '$resolved'."
+            fi
+          elif [ "${#generic_candidates[@]}" -eq 1 ]; then
+            resolved="${generic_candidates[0]}"
+            if [ -n "$requested" ]; then
+              echo "[WARN] Requested Dockerfile '$requested' was not found. Falling back to '$resolved'."
+            else
+              echo "[INFO] Auto-detected Dockerfile '$resolved'."
+            fi
+          else
+            if [ -n "$requested" ]; then
+              echo "[ERROR] Dockerfile '$requested' was not found."
+            else
+              echo "[ERROR] Failed to auto-detect a single application Dockerfile."
+            fi
+
+            if [ "${#generic_candidates[@]}" -gt 0 ]; then
+              echo "[ERROR] Available non-devcontainer Dockerfile candidates:"
+              printf '  - %s\n' "${generic_candidates[@]}"
+            elif [ "${#all_candidates[@]}" -gt 0 ]; then
+              echo "[ERROR] Available Dockerfile candidates:"
+              printf '  - %s\n' "${all_candidates[@]}"
+            else
+              echo "[ERROR] No Dockerfile candidates were found in the repository."
+            fi
+
+            if [ "${#preferred_candidates[@]}" -gt 1 ]; then
+              echo "[ERROR] Multiple application Dockerfiles were found:"
+              printf '  - %s\n' "${preferred_candidates[@]}"
+            fi
+
+            if [ "${#generic_candidates[@]}" -gt 1 ] && [ "${#preferred_candidates[@]}" -eq 0 ]; then
+              echo "[ERROR] Specify 'dockerfile' explicitly when multiple app Dockerfiles exist."
+            fi
+
+            exit 1
+          fi
+
+          if [ -z "$resolved" ]; then
+            if [ "${#generic_candidates[@]}" -gt 0 ]; then
+              echo "[ERROR] Dockerfile could not be resolved."
+              printf '  - %s\n' "${generic_candidates[@]}"
+            else
+              echo "[ERROR] No Dockerfile candidates were found in the repository."
+            fi
+            exit 1
+          fi
+
+          echo "path=$resolved" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare build args
+        id: build-args
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARGS=""
+          if [ -n "${{ inputs.project_path }}" ]; then
+            ARGS="${ARGS}PROJECT_PATH=${{ inputs.project_path }}\n"
+          fi
+          if [ -n "${{ inputs.app_dll }}" ]; then
+            ARGS="${ARGS}APP_DLL=${{ inputs.app_dll }}\n"
+          fi
+          # EOF 区切りで multiline output
+          {
+            echo "args<<EOFARGS"
+            echo -e "$ARGS"
+            echo "EOFARGS"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ steps.dockerfile.outputs.path }}
+          target: runtime
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ steps.build-args.outputs.args }}

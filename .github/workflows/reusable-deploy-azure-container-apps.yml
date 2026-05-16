@@ -1,0 +1,301 @@
+name: Reusable Deploy to Azure Container Apps
+# ===========================================================================
+# 汎用 ACA デプロイワークフロー
+# - アプリの種類（Next.js / .NET Web API 等）に依存しない
+# - 環境変数は呼び出し側が env_vars / secret_env_vars で自由に指定
+# - レジストリ認証は GHCR / ACR いずれにも対応
+# ===========================================================================
+
+on:
+  workflow_call:
+    inputs:
+      container_app_name:
+        required: true
+        type: string
+        description: Azure Container App の名前（31 文字以下、英小文字/数字/-、先頭は英字）
+      resource_group:
+        required: true
+        type: string
+        description: Azure リソースグループ名
+      image:
+        required: true
+        type: string
+        description: >
+          デプロイするコンテナイメージの完全修飾名（タグ含む）
+          例: ghcr.io/owner/app:main, myacr.azurecr.io/api:v1
+      registry_server:
+        required: true
+        type: string
+        description: >
+          コンテナレジストリのホスト名
+          例: ghcr.io, myacr.azurecr.io
+      registry_username:
+        required: true
+        type: string
+        description: >
+          コンテナレジストリ認証用ユーザー名（機密情報でないためinput）
+          GHCR の場合は github.actor を推奨
+      env_vars:
+        required: false
+        type: string
+        default: ""
+        description: >
+          公開可能な環境変数（スペース区切り KEY=VALUE 形式）
+          例: "NODE_ENV=production PORT=3000"
+      health_check_path:
+        required: false
+        type: string
+        default: "/"
+        description: ヘルスチェックに使用するパス
+      verify_timeout_seconds:
+        required: false
+        type: number
+        default: 120
+        description: デプロイ検証のタイムアウト（秒）
+    secrets:
+      azure_credentials:
+        required: false
+        description: Azure Service Principal の JSON 認証情報
+      azure_client_id:
+        required: false
+        description: OIDC 用 Azure Client ID
+      azure_tenant_id:
+        required: false
+        description: OIDC 用 Azure Tenant ID
+      azure_subscription_id:
+        required: false
+        description: OIDC 用 Azure Subscription ID
+      registry_password:
+        required: true
+        description: コンテナレジストリ認証用パスワード
+      secret_env_vars:
+        required: false
+        description: >
+          機密性のある環境変数（スペース区切り KEY=secretref:SECRET_NAME 形式、
+          または KEY=VALUE 形式）。ACA シークレットとして登録される。
+          例: "NEXTAUTH_SECRET=my-secret GOOGLE_CLIENT_ID=xxx"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Validate deployment inputs
+        env:
+          INPUT_CONTAINER_APP_NAME: ${{ inputs.container_app_name }}
+          INPUT_RESOURCE_GROUP: ${{ inputs.resource_group }}
+          INPUT_IMAGE: ${{ inputs.image }}
+          INPUT_REGISTRY_SERVER: ${{ inputs.registry_server }}
+        run: |
+          set -euo pipefail
+          errors=0
+          for var in INPUT_CONTAINER_APP_NAME INPUT_RESOURCE_GROUP INPUT_IMAGE INPUT_REGISTRY_SERVER; do
+            if [ -z "${!var}" ]; then
+              echo "[ERROR] ${var} is required"
+              errors=$((errors + 1))
+            fi
+          done
+          if [ "$errors" -gt 0 ]; then
+            exit 1
+          fi
+
+          if [ "${#INPUT_CONTAINER_APP_NAME}" -gt 31 ]; then
+            echo "[ERROR] INPUT_CONTAINER_APP_NAME ('$INPUT_CONTAINER_APP_NAME') must be 31 characters or fewer."
+            exit 1
+          fi
+
+          if [[ "$INPUT_CONTAINER_APP_NAME" == *"--"* ]]; then
+            echo "[ERROR] INPUT_CONTAINER_APP_NAME ('$INPUT_CONTAINER_APP_NAME') must not contain consecutive hyphens."
+            exit 1
+          fi
+
+          if [[ ! "$INPUT_CONTAINER_APP_NAME" =~ ^[a-z]([a-z0-9-]{0,29}[a-z0-9])?$ ]]; then
+            echo "[ERROR] INPUT_CONTAINER_APP_NAME ('$INPUT_CONTAINER_APP_NAME') must use lowercase letters, numbers, or '-', start with a letter, and end with a letter or number."
+            exit 1
+          fi
+
+      - name: Login to Azure
+        id: azure-auth
+        shell: bash
+        env:
+          AZURE_CREDENTIALS: ${{ secrets.azure_credentials }}
+          AZURE_CLIENT_ID: ${{ secrets.azure_client_id }}
+          AZURE_TENANT_ID: ${{ secrets.azure_tenant_id }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.azure_subscription_id }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${AZURE_CREDENTIALS:-}" ]; then
+            if ! echo "$AZURE_CREDENTIALS" | jq -e '.clientId and .tenantId and .subscriptionId and .clientSecret' >/dev/null; then
+              echo "[ERROR] azure_credentials must be JSON containing clientId, tenantId, subscriptionId, clientSecret"
+              exit 1
+            fi
+            echo "mode=service-principal" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -z "${AZURE_CLIENT_ID:-}" ] || [ -z "${AZURE_TENANT_ID:-}" ] || [ -z "${AZURE_SUBSCRIPTION_ID:-}" ]; then
+            echo "[ERROR] Set either azure_credentials or all of azure_client_id / azure_tenant_id / azure_subscription_id"
+            exit 1
+          fi
+
+          echo "mode=oidc" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Azure (service principal JSON)
+        if: steps.azure-auth.outputs.mode == 'service-principal'
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.azure_credentials }}
+
+      - name: Login to Azure (OIDC)
+        if: steps.azure-auth.outputs.mode == 'oidc'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.azure_client_id }}
+          tenant-id: ${{ secrets.azure_tenant_id }}
+          subscription-id: ${{ secrets.azure_subscription_id }}
+
+      # ------------------------------------------------------------------
+      # シークレット環境変数を ACA シークレットとして登録
+      # secret_env_vars が空でなければ --set-secrets で一括登録し、
+      # --set-env-vars で secretref: 参照を設定する
+      # ------------------------------------------------------------------
+      - name: Prepare secret references
+        id: secrets
+        shell: bash
+        env:
+          SECRET_ENV_VARS: ${{ secrets.secret_env_vars }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SECRET_ENV_VARS}" ]; then
+            echo "set_secrets_args=" >> "$GITHUB_OUTPUT"
+            echo "set_secret_env_args=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          SECRETS_ARGS=""
+          ENV_ARGS=""
+
+          for pair in ${SECRET_ENV_VARS}; do
+            KEY="${pair%%=*}"
+            VALUE="${pair#*=}"
+            # ACA シークレット名は小文字・ハイフンのみ許可
+            SECRET_NAME=$(echo "${KEY}" | tr '[:upper:]_' '[:lower:]-')
+            SECRETS_ARGS="${SECRETS_ARGS} ${SECRET_NAME}=${VALUE}"
+            ENV_ARGS="${ENV_ARGS} ${KEY}=secretref:${SECRET_NAME}"
+          done
+
+          echo "set_secrets_args=${SECRETS_ARGS}" >> "$GITHUB_OUTPUT"
+          echo "set_secret_env_args=${ENV_ARGS}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to Azure Container Apps
+        uses: azure/cli@v2
+        env:
+          SET_SECRETS: ${{ steps.secrets.outputs.set_secrets_args }}
+          SET_SECRET_ENV: ${{ steps.secrets.outputs.set_secret_env_args }}
+          PUBLIC_ENV_VARS: ${{ inputs.env_vars }}
+        with:
+          inlineScript: |
+            set -euo pipefail
+
+            # レジストリ認証情報を最初に設定
+            # （secret set が内部でリビジョン作成を試みるため、先に認証情報を登録する必要がある）
+            echo "[INFO] Setting registry credentials for ${{ inputs.registry_server }}..."
+            az containerapp registry set \
+              --name ${{ inputs.container_app_name }} \
+              --resource-group ${{ inputs.resource_group }} \
+              --server ${{ inputs.registry_server }} \
+              --username ${{ inputs.registry_username }} \
+              --password ${{ secrets.registry_password }}
+
+            # シークレットの登録（存在する場合）
+            if [ -n "${SET_SECRETS}" ]; then
+              echo "[INFO] Setting ACA secrets..."
+              az containerapp secret set \
+                --name ${{ inputs.container_app_name }} \
+                --resource-group ${{ inputs.resource_group }} \
+                --secrets ${SET_SECRETS}
+            fi
+
+            # 環境変数の組み立て
+            ENV_ARGS=""
+            if [ -n "${PUBLIC_ENV_VARS}" ]; then
+              ENV_ARGS="${PUBLIC_ENV_VARS}"
+            fi
+            if [ -n "${SET_SECRET_ENV}" ]; then
+              ENV_ARGS="${ENV_ARGS} ${SET_SECRET_ENV}"
+            fi
+
+            # コンテナイメージの更新
+            UPDATE_CMD="az containerapp update \
+              --name ${{ inputs.container_app_name }} \
+              --resource-group ${{ inputs.resource_group }} \
+              --image ${{ inputs.image }}"
+
+            if [ -n "${ENV_ARGS}" ]; then
+              UPDATE_CMD="${UPDATE_CMD} --set-env-vars ${ENV_ARGS}"
+            fi
+
+            echo "[INFO] Deploying image: ${{ inputs.image }}"
+            eval ${UPDATE_CMD}
+
+      - name: Verify deployment
+        uses: azure/cli@v2
+        with:
+          inlineScript: |
+            set -euo pipefail
+
+            FQDN=$(az containerapp show \
+              --name ${{ inputs.container_app_name }} \
+              --resource-group ${{ inputs.resource_group }} \
+              --query "properties.configuration.ingress.fqdn" \
+              --output tsv)
+
+            if [ -z "$FQDN" ]; then
+              echo "[ERROR] Could not retrieve Container App FQDN"
+              exit 1
+            fi
+
+            SITE_URL="https://${FQDN}${{ inputs.health_check_path }}"
+            echo "[INFO] Waiting for deployment to stabilize at ${SITE_URL}..."
+            sleep 20
+
+            TIMEOUT=${{ inputs.verify_timeout_seconds }}
+            INTERVAL=10
+            MAX_ATTEMPTS=$(( TIMEOUT / INTERVAL ))
+
+            for i in $(seq 1 ${MAX_ATTEMPTS}); do
+              HTTP_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "${SITE_URL}" 2>/dev/null || echo "000")
+              if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 400 ]; then
+                echo "[SUCCESS] Application is responding at ${SITE_URL} (HTTP ${HTTP_STATUS})"
+                exit 0
+              fi
+              echo "[INFO] Waiting for application... (${i}/${MAX_ATTEMPTS}) HTTP status: ${HTTP_STATUS}"
+              sleep ${INTERVAL}
+            done
+
+            echo "[WARNING] Deployment verification timed out after ${TIMEOUT}s."
+
+            # 最新リビジョンのログを取得
+            REVISION=$(az containerapp revision list \
+              --name ${{ inputs.container_app_name }} \
+              --resource-group ${{ inputs.resource_group }} \
+              --query "[0].name" --output tsv 2>/dev/null || echo "")
+            if [ -n "${REVISION}" ]; then
+              echo "[INFO] Latest revision: ${REVISION}"
+              az containerapp logs show \
+                --name ${{ inputs.container_app_name }} \
+                --resource-group ${{ inputs.resource_group }} \
+                --revision "${REVISION}" \
+                --tail 50 2>/dev/null || true
+            fi
+
+            echo "[WARNING] Application may still be starting. Check Azure Portal for details."
+
+      - name: Azure logout
+        if: always()
+        run: az logout

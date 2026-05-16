@@ -1,0 +1,205 @@
+name: Build and Deploy Router
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - copilot/**
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+      - develop
+
+concurrency:
+  group: deploy-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || github.ref_name }}
+  cancel-in-progress: ${{ !(contains(fromJSON('["main","develop"]'), github.ref_name) || (github.event_name == 'pull_request' && contains(fromJSON('["main","develop"]'), github.event.pull_request.base.ref))) }}
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+    runs-on: ubuntu-latest
+    env:
+      TEST_DB_COMPOSE_PROJECT: ${{ github.event.repository.name }}-dotnet-test-db
+      TEST_DB_HOST_PORT: ${{ vars.CI_TEST_DB_HOST_PORT }}
+      MSSQL_SA_PASSWORD: ${{ secrets.CI_TEST_MSSQL_SA_PASSWORD }}
+      MSSQL_DB: ${{ vars.CI_TEST_MSSQL_DB }}
+      MSSQL_PID: ${{ vars.CI_TEST_MSSQL_PID }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Locate solution
+        id: solution
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t solutions < <(find . -maxdepth 1 -type f -name '*.sln' | sort)
+          if [ "${#solutions[@]}" -ne 1 ]; then
+            echo "[ERROR] Expected exactly one solution file in repository root, found ${#solutions[@]}"
+            printf '%s\n' "${solutions[@]}"
+            exit 1
+          fi
+          echo "path=${solutions[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore dependencies
+        run: dotnet restore "${{ steps.solution.outputs.path }}"
+
+      - name: Build
+        run: dotnet build "${{ steps.solution.outputs.path }}" --no-restore --configuration Release
+
+      - name: Validate test database settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in TEST_DB_HOST_PORT MSSQL_SA_PASSWORD MSSQL_DB MSSQL_PID; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "[ERROR] Missing repository settings required for Infrastructure DB tests."
+            echo "[ERROR] Configure variable(s) CI_TEST_DB_HOST_PORT, CI_TEST_MSSQL_DB, CI_TEST_MSSQL_PID and secret CI_TEST_MSSQL_SA_PASSWORD."
+            exit 1
+          fi
+
+      - name: Start SQL Server test database
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -p "$TEST_DB_COMPOSE_PROJECT" -f docker-compose.dotnet.test-db.yml up -d --wait
+
+      - name: Run tests
+        run: dotnet test "${{ steps.solution.outputs.path }}" --no-build --configuration Release --verbosity normal
+
+      - name: Stop SQL Server test database
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -p "$TEST_DB_COMPOSE_PROJECT" -f docker-compose.dotnet.test-db.yml down -v
+
+  build-main:
+    if: github.event_name == 'push' && github.ref_name == 'main'
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/reusable-build-push-dotnet.yml
+    with:
+      image_tag: main
+      environment: production
+
+  build-develop:
+    if: github.event_name == 'push' && github.ref_name == 'develop'
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/reusable-build-push-dotnet.yml
+    with:
+      image_tag: develop
+      environment: development
+
+  # =================================================================
+  # Azure Container Apps デプロイ（main ブランチ → ACA 本番環境）
+  # =================================================================
+
+  deploy-main-aca:
+    if: github.event_name == 'push' && github.ref_name == 'main' && vars.ACA_DEPLOY_ENABLED == 'true' && vars.ACA_APP_NAME_PROD != '' && vars.AZURE_RESOURCE_GROUP != ''
+    needs: build-main
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    uses: ./.github/workflows/reusable-deploy-azure-container-apps.yml
+    with:
+      container_app_name: ${{ vars.ACA_APP_NAME_PROD }}
+      resource_group: ${{ vars.AZURE_RESOURCE_GROUP }}
+      image: ghcr.io/${{ github.repository }}:main
+      registry_server: ghcr.io
+      registry_username: ${{ github.actor }}
+      env_vars: "ASPNETCORE_ENVIRONMENT=Production PORT=8080"
+    secrets:
+      azure_credentials: ${{ secrets.AZURE_CREDENTIALS }}
+      azure_client_id: ${{ secrets.AZURE_CLIENT_ID }}
+      azure_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
+      azure_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      registry_password: ${{ secrets.GITHUB_TOKEN }}
+
+  # =================================================================
+  # Azure Container Apps デプロイ（develop ブランチ → ACA 開発環境）
+  # =================================================================
+
+  deploy-develop-aca:
+    if: github.event_name == 'push' && github.ref_name == 'develop' && vars.ACA_DEPLOY_ENABLED == 'true' && vars.ACA_APP_NAME_DEV != '' && vars.AZURE_RESOURCE_GROUP != ''
+    needs: build-develop
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    uses: ./.github/workflows/reusable-deploy-azure-container-apps.yml
+    with:
+      container_app_name: ${{ vars.ACA_APP_NAME_DEV }}
+      resource_group: ${{ vars.AZURE_RESOURCE_GROUP }}
+      image: ghcr.io/${{ github.repository }}:develop
+      registry_server: ghcr.io
+      registry_username: ${{ github.actor }}
+      env_vars: "ASPNETCORE_ENVIRONMENT=Development PORT=8080"
+    secrets:
+      azure_credentials: ${{ secrets.AZURE_CREDENTIALS }}
+      azure_client_id: ${{ secrets.AZURE_CLIENT_ID }}
+      azure_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
+      azure_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      registry_password: ${{ secrets.GITHUB_TOKEN }}
+
+  # =================================================================
+  # Azure Container Apps デプロイ（copilot/** ブランチ → ACA Copilot 環境）
+  # =================================================================
+
+  build-copilot:
+    if: github.event_name == 'push' && startsWith(github.ref_name, 'copilot/')
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/reusable-build-push-dotnet.yml
+    with:
+      image_tag: copilot
+      environment: development
+
+  deploy-copilot-aca:
+    if: github.event_name == 'push' && startsWith(github.ref_name, 'copilot/') && vars.ACA_DEPLOY_ENABLED == 'true' && vars.ACA_APP_NAME_COPILOT != '' && vars.AZURE_RESOURCE_GROUP != ''
+    needs: build-copilot
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    uses: ./.github/workflows/reusable-deploy-azure-container-apps.yml
+    with:
+      container_app_name: ${{ vars.ACA_APP_NAME_COPILOT }}
+      resource_group: ${{ vars.AZURE_RESOURCE_GROUP }}
+      image: ghcr.io/${{ github.repository }}:copilot
+      registry_server: ghcr.io
+      registry_username: ${{ github.actor }}
+      env_vars: "ASPNETCORE_ENVIRONMENT=Development PORT=8080"
+    secrets:
+      azure_credentials: ${{ secrets.AZURE_CREDENTIALS }}
+      azure_client_id: ${{ secrets.AZURE_CLIENT_ID }}
+      azure_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
+      azure_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      registry_password: ${{ secrets.GITHUB_TOKEN }}

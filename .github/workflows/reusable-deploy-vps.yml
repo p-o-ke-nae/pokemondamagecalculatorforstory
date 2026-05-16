@@ -1,0 +1,196 @@
+name: Reusable Deploy to VPS
+
+on:
+  workflow_call:
+    inputs:
+      compose_file:
+        required: true
+        type: string
+      project_name:
+        required: true
+        type: string
+      image_tag:
+        required: true
+        type: string
+      port:
+        required: true
+        type: string
+    secrets:
+      host:
+        required: true
+      username:
+        required: true
+      ssh_private_key:
+        required: true
+      nextauth_url:
+        required: true
+      nextauth_secret:
+        required: true
+      google_client_id:
+        required: true
+      google_client_secret:
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Create .ssh directory and add known hosts
+        env:
+          HOST: ${{ secrets.host }}
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p 22 "$HOST" >> ~/.ssh/known_hosts
+
+      - name: Transfer compose files to VPS
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.ssh_private_key }}
+          HOST: ${{ secrets.host }}
+          USERNAME: ${{ secrets.username }}
+        run: |
+          echo "$SSH_PRIVATE_KEY" > private_key
+          chmod 600 private_key
+
+          ssh "$USERNAME@$HOST" -i private_key -p 22 "mkdir -p ~/pokenae-web/secrets ~/pokenae-web/docker"
+
+          scp -i private_key -P 22 \
+            docker-compose.next.yml \
+            "${{ inputs.compose_file }}" \
+            "$USERNAME@$HOST:~/pokenae-web/"
+
+          scp -i private_key -P 22 \
+            docker/entrypoint.sh \
+            "$USERNAME@$HOST:~/pokenae-web/docker/"
+
+      - name: Create secrets on VPS
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.ssh_private_key }}
+          HOST: ${{ secrets.host }}
+          USERNAME: ${{ secrets.username }}
+        run: |
+          echo "$SSH_PRIVATE_KEY" > private_key
+          chmod 600 private_key
+
+          ssh "$USERNAME@$HOST" -i private_key -p 22 \
+            "cd ~/pokenae-web && \
+             printf '%s' '${{ secrets.nextauth_secret }}' > secrets/nextauth_secret && \
+             printf '%s' '${{ secrets.google_client_id }}' > secrets/google_client_id && \
+             printf '%s' '${{ secrets.google_client_secret }}' > secrets/google_client_secret && \
+             chmod 600 secrets/*"
+
+      - name: Deploy to VPS
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.ssh_private_key }}
+          HOST: ${{ secrets.host }}
+          USERNAME: ${{ secrets.username }}
+        run: |
+          echo "$SSH_PRIVATE_KEY" > private_key
+          chmod 600 private_key
+
+          ssh "$USERNAME@$HOST" -i private_key -p 22 \
+            "IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.image_tag }} \
+             OVERRIDE_COMPOSE_FILE=${{ inputs.compose_file }} \
+             PROJECT_NAME=${{ inputs.project_name }} \
+             NEXTAUTH_URL=${{ secrets.nextauth_url }} \
+             GITHUB_TOKEN=${{ github.token }} \
+             GITHUB_ACTOR=${{ github.actor }} \
+             bash -s" <<'EOF'
+          set -euo pipefail
+
+          cd ~/pokenae-web
+
+          LOCK_DIR="/tmp/pokenae-deploy-${PROJECT_NAME}.lock"
+          for i in $(seq 1 60); do
+            if mkdir "${LOCK_DIR}" 2>/dev/null; then
+              break
+            fi
+            echo "[INFO] Waiting for deployment lock... (${i}/60)"
+            sleep 2
+          done
+          if [ ! -d "${LOCK_DIR}" ]; then
+            echo "[ERROR] Failed to acquire deployment lock: ${LOCK_DIR}"
+            exit 1
+          fi
+          trap 'rmdir "${LOCK_DIR}" 2>/dev/null || true' EXIT
+
+          echo "[INFO] Logging in to GitHub Container Registry..."
+          echo "${GITHUB_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+
+          echo "[INFO] Pulling image..."
+          docker pull "${IMAGE}"
+
+          echo "[INFO] Stopping existing compose project..."
+          IMAGE="${IMAGE}" docker compose \
+            -p "${PROJECT_NAME}" \
+            -f docker-compose.next.yml \
+            -f "${OVERRIDE_COMPOSE_FILE}" \
+            down --remove-orphans 2>/dev/null || true
+
+          echo "[INFO] Starting container with docker compose..."
+          IMAGE="${IMAGE}" \
+          NEXTAUTH_URL="${NEXTAUTH_URL}" \
+          docker compose \
+            -p "${PROJECT_NAME}" \
+            -f docker-compose.next.yml \
+            -f "${OVERRIDE_COMPOSE_FILE}" \
+            up -d --no-build --force-recreate
+
+          echo "[INFO] Cleaning up old images..."
+          docker image prune -f
+          EOF
+
+      - name: Verify deployment
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.ssh_private_key }}
+          HOST: ${{ secrets.host }}
+          USERNAME: ${{ secrets.username }}
+        run: |
+          echo "$SSH_PRIVATE_KEY" > private_key
+          chmod 600 private_key
+
+          ssh "$USERNAME@$HOST" -i private_key -p 22 \
+            "OVERRIDE_COMPOSE_FILE=${{ inputs.compose_file }} \
+             PROJECT_NAME=${{ inputs.project_name }} \
+             PORT=${{ inputs.port }} \
+             bash -s" <<'EOF'
+          set -euo pipefail
+
+          echo "[INFO] Verifying deployment..."
+
+          CONTAINER_ID="$(docker compose -p "${PROJECT_NAME}" -f docker-compose.next.yml -f "${OVERRIDE_COMPOSE_FILE}" ps -q app)"
+          if [ -z "${CONTAINER_ID}" ]; then
+            echo "[ERROR] Failed to resolve app container from docker compose"
+            exit 1
+          fi
+
+          for i in $(seq 1 24); do
+            CONTAINER_STATUS=$(docker inspect --format='{{.State.Status}}' "${CONTAINER_ID}" 2>/dev/null || echo "not_found")
+            HEALTH_STATUS=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${CONTAINER_ID}" 2>/dev/null || echo "none")
+
+            if [ "$CONTAINER_STATUS" = "running" ] && [ "$HEALTH_STATUS" != "unhealthy" ]; then
+              if curl -sf "http://localhost:${PORT}/" > /dev/null 2>&1; then
+                echo "[SUCCESS] Application is responding on port ${PORT}"
+                exit 0
+              fi
+            fi
+
+            echo "[INFO] Waiting for stable startup... (${i}/24) status=${CONTAINER_STATUS}, health=${HEALTH_STATUS}"
+            sleep 5
+          done
+
+          echo "[ERROR] Deployment verification timed out"
+          docker ps -a --filter "id=${CONTAINER_ID}" || true
+          docker logs "${CONTAINER_ID}" --tail 100 2>/dev/null || true
+          exit 1
+          EOF

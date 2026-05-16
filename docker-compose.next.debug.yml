@@ -1,0 +1,34 @@
+# Debug環境用オーバーライド（Next.js ホットリロード）
+# ローカル: docker compose -p pokenae-debug -f docker-compose.next.yml -f docker-compose.next.debug.yml up --build
+
+services:
+  app:
+    build:
+      target: dev
+      args:
+        NEXT_PUBLIC_ENVIRONMENT: debug
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      NODE_ENV: development
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    restart: unless-stopped
+    cpus: 0.25
+    mem_limit: 512m
+    mem_reservation: 128m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

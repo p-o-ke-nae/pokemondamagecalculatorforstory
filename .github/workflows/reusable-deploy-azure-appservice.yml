@@ -1,0 +1,40 @@
+name: Reusable Deploy to Azure App Service
+
+on:
+  workflow_call:
+    inputs:
+      app_name:
+        required: true
+        type: string
+      image_tag:
+        required: true
+        type: string
+    secrets:
+      azure_webapp_publish_profile:
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+
+    steps:
+      - name: Validate deployment inputs
+        run: |
+          set -euo pipefail
+          if [ -z "${{ inputs.app_name }}" ]; then
+            echo "[ERROR] app_name is required"
+            exit 1
+          fi
+
+      - name: Deploy container image to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ inputs.app_name }}
+          publish-profile: ${{ secrets.azure_webapp_publish_profile }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.image_tag }}

@@ -1,0 +1,30 @@
+# 本番環境用オーバーライド
+# ローカル: docker compose -p pokenae-prod -f docker-compose.next.yml -f docker-compose.next.prod.yml up -d --build
+# CI/CD:    docker compose -p pokenae-prod -f docker-compose.next.yml -f docker-compose.next.prod.yml up -d
+
+services:
+  app:
+    build:
+      target: runner
+      args:
+        NEXT_PUBLIC_ENVIRONMENT: production
+    ports:
+      - "${PORT:-3001}:3000"
+    environment:
+      NODE_ENV: production
+      NEXTAUTH_URL: ${NEXTAUTH_URL}
+    restart: unless-stopped
+    cpus: 0.50
+    mem_limit: 512m
+    mem_reservation: 128m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

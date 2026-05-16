@@ -1,0 +1,165 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Docker Compose: Dotnet10 Debug Up",
+      "type": "shell",
+      "command": "docker",
+      "args": [
+        "compose",
+        "--env-file",
+        ".env.docker.debug",
+        "-p",
+        "pokenae-dotnet10-debug",
+        "-f",
+        "docker-compose.dotnet10.yml",
+        "-f",
+        "docker-compose.dotnet10.debug.yml",
+        "up",
+        "--build"
+      ],
+      "problemMatcher": [],
+      "group": "none",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Docker Compose: Dotnet10 Dev Up",
+      "type": "shell",
+      "command": "docker",
+      "args": [
+        "compose",
+        "--env-file",
+        ".env.docker.development",
+        "-p",
+        "pokenae-dotnet10-dev",
+        "-f",
+        "docker-compose.dotnet10.yml",
+        "-f",
+        "docker-compose.dotnet10.dev.yml",
+        "up",
+        "-d",
+        "--build"
+      ],
+      "problemMatcher": [],
+      "group": "none"
+    },
+    {
+      "label": "Docker Compose: Dotnet10 Prod Up",
+      "type": "shell",
+      "command": "docker",
+      "args": [
+        "compose",
+        "--env-file",
+        ".env.docker.production",
+        "-p",
+        "pokenae-dotnet10-prod",
+        "-f",
+        "docker-compose.dotnet10.yml",
+        "-f",
+        "docker-compose.dotnet10.prod.yml",
+        "up",
+        "-d",
+        "--build"
+      ],
+      "problemMatcher": [],
+      "group": "none"
+    },
+    {
+      "label": "Docker Compose: Dotnet10 Debug Down",
+      "type": "shell",
+      "command": "docker",
+      "args": [
+        "compose",
+        "--env-file",
+        ".env.docker.debug",
+        "-p",
+        "pokenae-dotnet10-debug",
+        "-f",
+        "docker-compose.dotnet10.yml",
+        "-f",
+        "docker-compose.dotnet10.debug.yml",
+        "down"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Docker Compose: Dotnet10 Dev Down",
+      "type": "shell",
+      "command": "docker",
+      "args": [
+        "compose",
+        "--env-file",
+        ".env.docker.development",
+        "-p",
+        "pokenae-dotnet10-dev",
+        "-f",
+        "docker-compose.dotnet10.yml",
+        "-f",
+        "docker-compose.dotnet10.dev.yml",
+        "down"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Docker Compose: Dotnet10 Prod Down",
+      "type": "shell",
+      "command": "docker",
+      "args": [
+        "compose",
+        "--env-file",
+        ".env.docker.production",
+        "-p",
+        "pokenae-dotnet10-prod",
+        "-f",
+        "docker-compose.dotnet10.yml",
+        "-f",
+        "docker-compose.dotnet10.prod.yml",
+        "down"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Docker Compose: Dotnet Test DB Up",
+      "type": "shell",
+      "command": "docker",
+      "args": [
+        "compose",
+        "--env-file",
+        ".env.docker.test",
+        "-p",
+        "pokenae-dotnet-test-db",
+        "-f",
+        "docker-compose.dotnet.test-db.yml",
+        "up",
+        "-d"
+      ],
+      "problemMatcher": [],
+      "group": "none"
+    },
+    {
+      "label": "Docker Compose: Dotnet Test DB Down",
+      "type": "shell",
+      "command": "docker",
+      "args": [
+        "compose",
+        "--env-file",
+        ".env.docker.test",
+        "-p",
+        "pokenae-dotnet-test-db",
+        "-f",
+        "docker-compose.dotnet.test-db.yml",
+        "down"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Docker Compose: All Down",
+      "type": "shell",
+      "command": "docker compose --env-file .env.docker.debug -p pokenae-dotnet10-debug -f docker-compose.dotnet10.yml -f docker-compose.dotnet10.debug.yml down; docker compose --env-file .env.docker.development -p pokenae-dotnet10-dev -f docker-compose.dotnet10.yml -f docker-compose.dotnet10.dev.yml down; docker compose --env-file .env.docker.production -p pokenae-dotnet10-prod -f docker-compose.dotnet10.yml -f docker-compose.dotnet10.prod.yml down; docker compose --env-file .env.docker.test -p pokenae-dotnet-test-db -f docker-compose.dotnet.test-db.yml down",
+      "problemMatcher": []
+    }
+  ]
+}
