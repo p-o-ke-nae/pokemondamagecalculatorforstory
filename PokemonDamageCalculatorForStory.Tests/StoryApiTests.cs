@@ -23,14 +23,7 @@ public sealed class StoryApiTests
         response.EnsureSuccessStatusCode();
 
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var postRunOperation = document.RootElement
-            .GetProperty("paths")
-            .EnumerateObject()
-            .SelectMany(path => path.Value.EnumerateObject())
-            .Select(operation => operation.Value)
-            .Single(operation =>
-                operation.TryGetProperty("summary", out var summary)
-                && summary.GetString() == "run を作成");
+        var postRunOperation = GetSwaggerOperation(document, "/api/runs", "post");
 
         Assert.AreEqual("run を作成", postRunOperation.GetProperty("summary").GetString());
 
@@ -39,6 +32,18 @@ public sealed class StoryApiTests
         StringAssert.Contains(description, "### ユースケース");
         StringAssert.Contains(description, "### 入力例");
         StringAssert.Contains(description, "\"rulesetId\": \"11111111-1111-1111-1111-111111111111\"");
+
+        var reorderOperation = GetSwaggerOperation(document, "/api/routes/{routeId}:reorder", "post");
+        Assert.AreEqual("進行イベント順を並べ替え", reorderOperation.GetProperty("summary").GetString());
+        var reorderDescription = reorderOperation.GetProperty("description").GetString();
+        Assert.IsNotNull(reorderDescription);
+        StringAssert.Contains(reorderDescription, "\"eventIds\": [");
+
+        var compareAliasOperation = GetSwaggerOperation(document, "/api/calculations/damage:compare-patterns", "post");
+        Assert.AreEqual("比較計算を実行（互換 alias）", compareAliasOperation.GetProperty("summary").GetString());
+        var compareAliasDescription = compareAliasOperation.GetProperty("description").GetString();
+        Assert.IsNotNull(compareAliasDescription);
+        StringAssert.Contains(compareAliasDescription, "compare-patterns の互換エンドポイント");
     }
 
     [TestMethod]
@@ -631,6 +636,14 @@ public sealed class StoryApiTests
         client.DefaultRequestHeaders.Add("X-Test-User", userId);
         client.DefaultRequestHeaders.Add("X-Test-Role", role);
         return client;
+    }
+
+    private static JsonElement GetSwaggerOperation(JsonDocument document, string path, string method)
+    {
+        var paths = document.RootElement.GetProperty("paths");
+        Assert.IsTrue(paths.TryGetProperty(path, out var pathItem), $"Swagger path '{path}' was not generated.");
+        Assert.IsTrue(pathItem.TryGetProperty(method, out var operation), $"Swagger operation '{method.ToUpperInvariant()} {path}' was not generated.");
+        return operation;
     }
 
     private static async Task<(RunAggregate Run, RoutePlan Route, BattleDefinition Battle, Guid PartyMemberId)> CreateRunWithBattleAsync(HttpClient client)
