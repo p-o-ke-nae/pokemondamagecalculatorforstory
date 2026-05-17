@@ -10,7 +10,11 @@ public class AppDbContext : DbContext
     {
     }
 
-    public DbSet<PersistedWeatherForecast> PersistedWeatherForecasts => Set<PersistedWeatherForecast>();
+    internal DbSet<PersistedRuleset> Rulesets => Set<PersistedRuleset>();
+    internal DbSet<PersistedMasterVersionSet> MasterVersionSets => Set<PersistedMasterVersionSet>();
+    internal DbSet<PersistedRun> Runs => Set<PersistedRun>();
+    internal DbSet<PersistedShare> Shares => Set<PersistedShare>();
+    internal DbSet<PersistedImportJob> ImportJobs => Set<PersistedImportJob>();
     public DbSet<PersistedUserAuthorizationInfo> PersistedUserAuthorizationInfos => Set<PersistedUserAuthorizationInfo>();
     public DbSet<PersistedUserPermission> PersistedUserPermissions => Set<PersistedUserPermission>();
 
@@ -18,30 +22,70 @@ public class AppDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        modelBuilder.Entity<PersistedWeatherForecast>(entity =>
+        modelBuilder.Entity<PersistedRuleset>(entity =>
         {
             entity.HasKey(e => e.Id);
 
-            entity.Property(e => e.Id)
-                .ValueGeneratedOnAdd();
-
-            entity.Property(e => e.Date)
-                .IsRequired();
-
-            entity.Property(e => e.TemperatureC)
-                .IsRequired();
-
-            entity.Property(e => e.Summary)
-                .HasMaxLength(100);
-
-            entity.Property(e => e.OwnerGoogleUserId)
+            entity.Property(e => e.Slug)
                 .HasMaxLength(128)
                 .IsRequired();
 
-            entity.Property(e => e.IsPublic)
+            entity.Property(e => e.PayloadJson)
                 .IsRequired();
 
-            entity.ToTable("WeatherForecasts");
+            entity.ToTable("Rulesets");
+        });
+
+        modelBuilder.Entity<PersistedMasterVersionSet>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.PayloadJson)
+                .IsRequired();
+
+            entity.ToTable("MasterVersionSets");
+        });
+
+        modelBuilder.Entity<PersistedRun>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.OwnerUserId)
+                .HasMaxLength(256)
+                .IsRequired();
+
+            entity.Property(e => e.PayloadJson)
+                .IsRequired();
+
+            entity.ToTable("Runs");
+        });
+
+        modelBuilder.Entity<PersistedShare>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.OwnerUserId)
+                .HasMaxLength(256)
+                .IsRequired();
+
+            entity.Property(e => e.PayloadJson)
+                .IsRequired();
+
+            entity.ToTable("Shares");
+        });
+
+        modelBuilder.Entity<PersistedImportJob>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.SubmittedByUserId)
+                .HasMaxLength(256)
+                .IsRequired();
+
+            entity.Property(e => e.PayloadJson)
+                .IsRequired();
+
+            entity.ToTable("ImportJobs");
         });
 
         modelBuilder.Entity<PersistedUserAuthorizationInfo>(entity =>
