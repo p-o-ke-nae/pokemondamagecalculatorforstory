@@ -24,6 +24,7 @@
 |---|---|---|
 | Domain / service unit tests | Service / Unit | verification issue 生成、中央管理 type chart、PP warning 付き damage calculation、threshold 判定、stale fingerprint 導出、metadata diff 判定 |
 | Scenario API integration | API / Integration | ruleset → run → initial state(最大 6 体 party) → route → enemy group → battle → participation → progression → verify → calculations の E2E |
+| Swagger / OpenAPI regression | API / Integration | `swagger.json` に operation summary、ユースケース、入力例、正規化済み path metadata が公開されることを固定する |
 | Preset / pattern table integration | API / Integration | preset stable ID、IV range、EV pattern、nature pattern の保存と compare / threshold 参照の E2E |
 | Share / collaboration integration | API / Integration | generic source snapshot publish、viewer/commenter/reviser policy、revision lineage、metadata diff、snapshot replay の E2E |
 | Admin import integration | API / Integration | dry-run / commit、row-level error / warning、duplicate summary、master version publish、audit trail の E2E |
@@ -40,6 +41,7 @@
 | Quick search | keyword 検索で battle hit を返す | Integration |
 | Route verification | missing initial state issue、participation 不整合、stale metadata と正常系 verification を返す | Unit / Integration |
 | Damage calculation | damage range、中間式、centralized type effectiveness、PP warning、source references、使用 version を返す | Unit / Integration |
+| Swagger / OpenAPI documentation | Testing 環境で `swagger.json` を取得でき、operation summary / description にユースケースと入力例が含まれる | Integration |
 | Preset / pattern table | IV range input と EV / nature pattern table を stable ID 付き resource として保存・参照できる | Integration |
 | Compare-patterns | ケース比較結果のみを返し、minimum threshold answer を返さない | Integration |
 | Threshold-search | `hp`, `attack`, `defense`, `specialAttack`, `specialDefense`, `speed` の IV を 0..31 の整数・1 刻みで探索し、`minimum-damage-at-least`, `maximum-damage-at-most`, `action-order-at-least` を含む `allOf` 条件に対して `solved` / `no-solution` / `multiple-minimal-solutions` と `bestSolution` / `allMinimalSolutions` / `searchedRangeSummary` / `unsatisfiedConditions` を返す。`anyOf` や priority 指定は validation error | Unit / Integration |
@@ -75,6 +77,7 @@
 | `PDC-API-07` | admin import は member を拒否し、admin では dry-run / commit と row-level validation / duplicate summary / audit trail が取得できる |
 | `PDC-API-08` | route reorder / event update 後に stale 判定と `progressionFingerprint` 更新が確認できる |
 | `PDC-API-09` | `item-use` / `move-change` event 登録後に progression と damage 入力補助が更新される |
+| `PDC-API-10` | Testing 環境で `swagger/v1/swagger.json` を取得でき、`POST /api/runs` などの operation summary / description にユースケースと入力例が含まれる |
 
 ## 4. Minimum Non-Gaps for Phase 3
 

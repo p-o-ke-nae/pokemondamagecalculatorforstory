@@ -28,7 +28,8 @@
 | AuthN | Google access token bearer。テストでは header ベースの test auth に差し替え |
 | AuthZ | `/api/runs*`, `/api/routes*`, `/api/calculations*` は所有者必須。share は `owner`, `viewer`, `commenter`, `reviser` の policy で read/comment/revise を分離し、`/api/admin*` は `Administrator` ロール必須 |
 | Persistence | EF Core。通常は SQL Server、テストや指定時は InMemory |
-| Startup behavior | production 以外は migration 試行後に seed を投入。開発環境のみ Swagger UI を公開 |
+| Startup behavior | production 以外は migration 試行後に seed を投入。Development / Testing 環境では Swagger UI と `/swagger/v1/swagger.json` を公開する |
+| OpenAPI metadata | Swagger / OpenAPI の operation summary / description にはユースケースと入力例を含め、公開 path は OpenAPI 上で正規化して扱う |
 | Seed data | foundation ruleset と published master version set を投入し、version metadata 契約の雛形を提供する |
 
 ## 2. Module Boundaries
