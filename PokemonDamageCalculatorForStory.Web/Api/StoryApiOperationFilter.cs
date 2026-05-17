@@ -352,7 +352,7 @@ internal sealed class StoryApiOperationFilter : IOperationFilter
                   ]
                 }
                 """, "新規クライアントでは `/api/calculations/compare-patterns` を推奨します。"),
-            "POST api/calculations/damage:search-thresholds" => JsonDoc("Calculations", "threshold-search を実行", "指定条件を満たす最小 IV 組み合わせを探索し、攻略ラインを確認する API です。", """
+            "POST api/calculations/damage:search-thresholds" => JsonDoc("Calculations", "threshold-search を実行（互換 alias）", "threshold-search の互換エンドポイントです。既存クライアントを壊さずに最小 IV 探索を呼び出すための API です。", """
                 {
                   "runId": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
                   "routeId": "cccccccc-1111-2222-3333-dddddddddddd",
@@ -370,8 +370,8 @@ internal sealed class StoryApiOperationFilter : IOperationFilter
                   ],
                   "priorityOrder": []
                 }
-                """),
-            "POST api/calculations/threshold-search" => JsonDoc("Calculations", "threshold-search を実行（別 path）", "damage:search-thresholds と同じ探索ユースケースを満たす別 path の API です。", """
+                """, "新規クライアントでは `/api/calculations/threshold-search` を推奨します。"),
+            "POST api/calculations/threshold-search" => JsonDoc("Calculations", "threshold-search を実行", "指定条件を満たす最小 IV 組み合わせを探索し、攻略ラインを確認する API です。", """
                 {
                   "runId": "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
                   "routeId": "cccccccc-1111-2222-3333-dddddddddddd",

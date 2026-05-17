@@ -44,6 +44,18 @@ public sealed class StoryApiTests
         var compareAliasDescription = compareAliasOperation.GetProperty("description").GetString();
         Assert.IsNotNull(compareAliasDescription);
         StringAssert.Contains(compareAliasDescription, "compare-patterns の互換エンドポイント");
+
+        var thresholdOperation = GetSwaggerOperation(document, "/api/calculations/threshold-search", "post");
+        Assert.AreEqual("threshold-search を実行", thresholdOperation.GetProperty("summary").GetString());
+        var thresholdDescription = thresholdOperation.GetProperty("description").GetString();
+        Assert.IsNotNull(thresholdDescription);
+        StringAssert.Contains(thresholdDescription, "最小 IV 組み合わせを探索");
+
+        var thresholdAliasOperation = GetSwaggerOperation(document, "/api/calculations/damage:search-thresholds", "post");
+        Assert.AreEqual("threshold-search を実行（互換 alias）", thresholdAliasOperation.GetProperty("summary").GetString());
+        var thresholdAliasDescription = thresholdAliasOperation.GetProperty("description").GetString();
+        Assert.IsNotNull(thresholdAliasDescription);
+        StringAssert.Contains(thresholdAliasDescription, "threshold-search の互換エンドポイント");
     }
 
     [TestMethod]
