@@ -50,7 +50,7 @@ builder.Services.AddSwaggerGen(options =>
     {
         Title = "PokemonDamageCalculatorForStory API",
         Version = "v1",
-        Description = "ストーリー攻略用ポケモンダメージ計算 foundation API"
+        Description = "ストーリー攻略用ポケモンダメージ計算 API"
     });
 
     options.AddSecurityDefinition(GoogleAuthenticationDefaults.AuthenticationScheme, new OpenApiSecurityScheme

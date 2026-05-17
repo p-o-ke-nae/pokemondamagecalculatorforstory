@@ -59,7 +59,7 @@ public sealed class StoryApiTests
     }
 
     [TestMethod]
-    public async Task StoryFoundationEndpoints_WorkEndToEnd()
+    public async Task StoryEndpoints_WorkEndToEnd()
     {
         using var client = CreateClient("story-user");
 
@@ -67,7 +67,7 @@ public sealed class StoryApiTests
         Assert.IsNotNull(rulesets);
         Assert.AreEqual(SeedRulesetId, rulesets[0].Id);
 
-        var runResponse = await client.PostAsJsonAsync("/api/runs", new { rulesetId = SeedRulesetId, name = "Emerald foundation run" });
+        var runResponse = await client.PostAsJsonAsync("/api/runs", new { rulesetId = SeedRulesetId, name = "Emerald story run" });
         runResponse.EnsureSuccessStatusCode();
         var run = await runResponse.Content.ReadFromJsonAsync<RunAggregate>();
         Assert.IsNotNull(run);
@@ -458,7 +458,7 @@ public sealed class StoryApiTests
             sourceId = route.Id,
             visibility = "public",
             allowedRoles = new[] { "viewer", "commenter", "reviser" },
-            summary = "foundation publish",
+            summary = "story publish",
             frozenInput = new { routeId = route.Id, source = "route-plan" },
             frozenOutput = new { progressionFingerprint = route.ProgressionFingerprint }
         });
@@ -607,7 +607,7 @@ public sealed class StoryApiTests
             sourceId = route.Id,
             visibility = "public",
             allowedRoles = new[] { "viewer", "commenter", "reviser" },
-            summary = "foundation publish",
+            summary = "story publish",
             frozenInput = new { routeId = route.Id, source = "route-plan" },
             frozenOutput = new { progressionFingerprint = route.ProgressionFingerprint }
         });

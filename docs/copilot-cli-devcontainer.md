@@ -118,8 +118,8 @@ GitHub native の ruleset では、reviewed Pull Request merge を **UI から�
 
 ```powershell
 dotnet build .\templates\dotnet8\PokemonDamageCalculatorForStory.sln
-dotnet test .\templates\dotnet8\PokemonDamageCalculatorForStory.Tests\PokemonDamageCalculatorForStory.Tests.csproj
+dotnet test --project .\templates\dotnet8\PokemonDamageCalculatorForStory.Tests\PokemonDamageCalculatorForStory.Tests.csproj
 dotnet build .\templates\dotnet10\PokemonDamageCalculatorForStory.sln
-dotnet test .\templates\dotnet10\PokemonDamageCalculatorForStory.Tests\PokemonDamageCalculatorForStory.Tests.csproj
+dotnet test --project .\templates\dotnet10\PokemonDamageCalculatorForStory.Tests\PokemonDamageCalculatorForStory.Tests.csproj
 docker build -f .\.devcontainer\Dockerfile .
 ```

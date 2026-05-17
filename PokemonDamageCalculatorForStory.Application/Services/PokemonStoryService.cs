@@ -1094,16 +1094,16 @@ public sealed class PokemonStoryService
                 new VersionCatalog(
                     $"{ruleset.Slug}:damage:{ruleset.Version}",
                     $"{ruleset.Slug}:experience:{ruleset.Version}",
-                    "pokemon-master-foundation",
-                    "move-master-foundation",
-                    "ability-master-foundation",
-                    "item-master-foundation",
-                    "type-chart-foundation",
-                    "nature-master-foundation",
-                    "story-enemy-master-foundation",
-                    "experience-table-foundation",
-                    "effort-value-master-foundation",
-                    "pp-rule-foundation",
+                    "pokemon-master-v1",
+                    "move-master-v1",
+                    "ability-master-v1",
+                    "item-master-v1",
+                    "type-chart-v1",
+                    "nature-master-v1",
+                    "story-enemy-master-v1",
+                    "experience-table-v1",
+                    "effort-value-master-v1",
+                    "pp-rule-v1",
                     parsedWorkbook.AdditionalVersionKeys,
                     new[] { jobId }),
                 new[]
@@ -1682,7 +1682,7 @@ public sealed class PokemonStoryService
             rowResults,
             new ImportDuplicateSummary(lines.Length, duplicateRows),
             messages,
-            new[] { "evolution-rule-foundation", "participation-rule-foundation", "parsed-spreadsheet-content" });
+            new[] { "evolution-rule-v1", "participation-rule-v1", "parsed-spreadsheet-content" });
     }
 
     private static bool TryParseWorkbookArchive(string workbookName, string? workbookContent, out (IReadOnlyList<ImportRowResult> RowResults, ImportDuplicateSummary DuplicateSummary, IReadOnlyList<string> Messages, IReadOnlyList<string> AdditionalVersionKeys) parsedWorkbook)
@@ -1754,7 +1754,7 @@ public sealed class PokemonStoryService
                 $"Workbook archive '{workbookName}' parsed.",
                 $"{duplicateRows.Count} duplicate row(s) detected."
             },
-            new[] { "evolution-rule-foundation", "participation-rule-foundation", "parsed-workbook-archive" });
+            new[] { "evolution-rule-v1", "participation-rule-v1", "parsed-workbook-archive" });
         return true;
     }
 

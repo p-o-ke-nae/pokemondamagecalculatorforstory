@@ -181,7 +181,7 @@ public sealed class PokemonStoryServiceTests
 
     private static PokemonStoryService CreateService(out RunAggregate seededRun, bool includeInitialState = false, bool negativePp = false)
     {
-        var ruleset = new Ruleset(Guid.Parse("11111111-1111-1111-1111-111111111111"), "gen3-emerald-story", "Gen3", "Pokemon Emerald", "story-v1", "active", "foundation");
+        var ruleset = new Ruleset(Guid.Parse("11111111-1111-1111-1111-111111111111"), "gen3-emerald-story", "Gen3", "Pokemon Emerald", "story-v1", "active", "story-run");
         var versionSet = new MasterVersionSet(
             Guid.Parse("22222222-2222-2222-2222-222222222222"),
             ruleset.Id,

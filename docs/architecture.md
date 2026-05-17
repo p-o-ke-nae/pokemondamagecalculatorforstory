@@ -2,14 +2,14 @@
 
 ## 概要
 
-このドキュメントは、リポジトリ全体に対して影響の大きい設計変更の境界を俯瞰するための一覧です。リポジトリ直下の [`../ARCHITECTURE.md`](../ARCHITECTURE.md) が生成される `.NET` アプリケーションの基礎アーキテクチャを扱うのに対し、本書は issue ごとの設計スライス、承認済み契約、Phase 3 で満たすべき責務境界を整理します。
+このドキュメントは、リポジトリ全体に対して影響の大きい設計変更の境界を俯瞰するための一覧です。リポジトリ直下の [`../ARCHITECTURE.md`](../ARCHITECTURE.md) が生成される `.NET` アプリケーションの基礎アーキテクチャを扱うのに対し、本書は issue ごとの設計スライス、承認済み契約、Phase 2 の設計骨子と Phase 3 で満たすべき責務境界を整理します。
 
 | 項目 | 内容 |
 |---|---|
 | 現在の役割 | 影響モジュール一覧、責務境界、承認済みスコープの必須契約を明示 |
 | 基礎アーキテクチャ | [`../ARCHITECTURE.md`](../ARCHITECTURE.md) |
-| Issue #1 関連設計 | [Pokemon Story Damage Calculator API Foundation](designs/pokemon-story-damage-calculator-api-foundation.md) |
-| Issue #1 関連テスト | [Pokemon Story Damage Calculator Foundation Test Plan](tests/pokemon-story-damage-calculator-foundation-test-plan.md) |
+| Issue #1 関連設計 | [Pokemon Story Damage Calculator API Design](designs/pokemon-story-damage-calculator-api-design.md) |
+| Issue #1 関連テスト | [Pokemon Story Damage Calculator Test Plan](tests/pokemon-story-damage-calculator-test-plan.md) |
 | Issue #8 関連設計 | [Bootstrap Foundation Design](designs/bootstrap-foundation.md) |
 | Issue #8 関連テスト | [Bootstrap Foundation Test Plan](tests/bootstrap-foundation-test-plan.md) |
 
@@ -17,7 +17,7 @@
 
 | Slice | Issue | Phase / Step | Status |
 |---|---|---|---|
-| Pokemon story damage calculator foundation | #1 | Phase 3 / Step 3.11 | implementation-aligned |
+| Pokemon story damage calculator | #1 | Phase 2 / Step 2.2.5 | design-aligned |
 | Bootstrap foundation redesign | #8 | Phase 3 / Step 3.4.5 | implementation-aligned |
 
 ## ドキュメント境界
@@ -38,6 +38,18 @@
 | snapshot 再現性 | shareable snapshot は `damageRulesetVersion`, `experienceRulesetVersion`, `pokemonMasterVersion`, `moveMasterVersion`, `abilityMasterVersion`, `itemMasterVersion`, `typeChartVersion`, `natureMasterVersion`, `storyEnemyMasterVersion` または `userEnemyGroupRevision`, `experienceTableVersion`, `effortValueMasterVersion`, `ppRuleVersion`, `importJobIds[]`, `progressionFingerprint`, `calculationInputDigest`, `calculationOutputDigest` に加え、実計算で参照した追加 master group と share policy を固定する |
 | collaboration policy | 初期リリースで `owner`, `viewer`, `commenter`, `reviser` の権限概念を持ち、comment / diff / revision は share policy に従って認可する |
 | 認証と認可 | 通常実行時は Google access token bearer、run 系は所有者必須、admin 系は `Administrator` ロール必須、shared snapshot は policy ベースで read/comment/revise を制御する |
+
+### Phase 2 implementation alignment
+
+| Topic | Direction |
+|---|---|
+| 実装スタンス | Issue #1 は暫定土台ではなく、story damage calculator の本実装へ向けて再編する |
+| one-type-per-file | Domain / Application / Infrastructure / Web の継続保守対象型は one-type-per-file を基本とする |
+| generation-aware types | type 相性や ruleset 差分は generation-aware policy / strategy で扱い、固定表への直結を避ける |
+| ruleset support boundary | ruleset 非対応の type / move / ability / item は validation error または import row reject とし、内部正規化で吸収しない |
+| use-case split | 大きな service を run / progression / verification / damage / compare / threshold / share / import の use case 群へ分割する |
+| OpenAPI readability | endpoint catalog は use case ごとに整理し、canonical path・alias・summary・example を読みやすくする |
+| test platform | テストは Microsoft Testing Platform と Visual Studio 2026 discoverability を考慮して構成する |
 
 ### モジュール関係
 
@@ -65,11 +77,11 @@ graph TD
 
 | Layer | 主な責務 | Sequencing note |
 |---|---|---|
-| Domain | records 中心の authority model、party progression、threshold 条件、share/import artifact を定義 | `PokemonType` と version metadata key 群を domain 契約の核として持つ |
-| Application | run 管理、verification、progression、damage、threshold、share、import を集約する | `StoryProgressionProjector` と damage kernel を分離し、EXP / EV / PP と damage を別コードパスにする |
+| Domain | records 中心の authority model、party progression、threshold 条件、share/import artifact を定義 | `PokemonType` と version metadata key 群を domain 契約の核として持ち、generation-aware policy へ接続できるようにする |
+| Application | run 管理、verification、progression、damage、threshold、share、import を use case 単位で構成する | `StoryProgressionProjector` と damage kernel を分離し、巨大 service ではなく分解されたハンドラ群で扱う |
 | Infrastructure | EF Core + SQL Server / InMemory、JSON 永続化 repository、import audit trail、seed を提供する | import dry-run / commit / publish の監査可能性を保持する |
-| Web | minimal API、Google bearer auth、Swagger、problem details を提供する | shared snapshot と admin import は role/policy ベースの認可を明示する |
-| Tests | service test と API E2E で foundation 契約を固定する | stale detection、share policy、threshold search、import audit を Phase 3 完了条件に含める |
+| Web | minimal API、Google bearer auth、Swagger、problem details を提供する | shared snapshot と admin import は role/policy ベースの認可を明示し、OpenAPI catalog の readability を改善する |
+| Tests | service test と API E2E で本実装契約を固定する | stale detection、share policy、threshold search、import audit に加え、MTP / Visual Studio 2026 互換を Phase 3 完了条件に含める |
 
 ### 必須 capability map
 
@@ -87,7 +99,7 @@ graph TD
 | sharing / comments / diff / revision | route plan / calculation / comparison / verification を generic source とする immutable snapshot、comment、diff、revision lineage を提供する | metadata key 欠落も差分として扱い、route 順序・前提値・結果差分・share policy 差分・import job 参照差分を比較する |
 | share visibility enforcement | `owner`, `viewer`, `commenter`, `reviser` を区別する | 匿名 read の有無ではなく操作権限単位で policy を固定する |
 | admin import / master maintenance | spreadsheet import の dry-run / commit / publish と audit trail を提供する | row-level errors / warnings / duplicate summary / source metadata / importJobId を返す |
-| spreadsheet import parser | workbook / spreadsheet 内容を解析して versioned master を作る | foundation stub ではなく、受入れ fixture を通せる parser を完了条件に含める |
+| spreadsheet import parser | workbook / spreadsheet 内容を解析して versioned master を作る | 暫定 stub ではなく、受入れ fixture を通せる parser を完了条件に含める |
 
 ## Issue #8: Bootstrap Foundation Top-Level Areas
 
