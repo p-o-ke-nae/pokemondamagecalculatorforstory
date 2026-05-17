@@ -62,6 +62,9 @@ builder.Services.AddSwaggerGen(options =>
         Name = "Authorization",
         Description = "Google ログインで取得した access token を指定してください。"
     });
+
+    options.OperationFilter<AuthorizeOperationFilter>();
+    options.OperationFilter<StoryApiOperationFilter>();
 });
 
 builder.Services.AddAuthentication(options =>
@@ -124,7 +127,7 @@ if (!app.Environment.IsProduction())
 
 await SeedDatabaseAsync(app);
 
-if (app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
 {
     app.UseSwagger();
     app.UseSwaggerUI();

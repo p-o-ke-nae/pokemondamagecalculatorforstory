@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PokemonDamageCalculatorForStory.Domain.Models;
 using PokemonDamageCalculatorForStory.Tests.TestDoubles;
@@ -11,6 +12,34 @@ public sealed class StoryApiTests
 {
     private static readonly Guid SeedRulesetId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private readonly TestWebApplicationFactory _factory = new();
+
+    [TestMethod]
+    public async Task SwaggerDocument_ContainsUseCaseAndInputExamples()
+    {
+        await using var swaggerFactory = new TestWebApplicationFactory("Testing");
+        using var client = swaggerFactory.CreateClient();
+
+        using var response = await client.GetAsync("/swagger/v1/swagger.json");
+        response.EnsureSuccessStatusCode();
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var postRunOperation = document.RootElement
+            .GetProperty("paths")
+            .EnumerateObject()
+            .SelectMany(path => path.Value.EnumerateObject())
+            .Select(operation => operation.Value)
+            .Single(operation =>
+                operation.TryGetProperty("summary", out var summary)
+                && summary.GetString() == "run を作成");
+
+        Assert.AreEqual("run を作成", postRunOperation.GetProperty("summary").GetString());
+
+        var description = postRunOperation.GetProperty("description").GetString();
+        Assert.IsNotNull(description);
+        StringAssert.Contains(description, "### ユースケース");
+        StringAssert.Contains(description, "### 入力例");
+        StringAssert.Contains(description, "\"rulesetId\": \"11111111-1111-1111-1111-111111111111\"");
+    }
 
     [TestMethod]
     public async Task StoryFoundationEndpoints_WorkEndToEnd()
@@ -257,7 +286,7 @@ public sealed class StoryApiTests
         updateEventResponse.EnsureSuccessStatusCode();
         route = await updateEventResponse.Content.ReadFromJsonAsync<RoutePlan>();
         Assert.IsNotNull(route);
-        Assert.IsTrue(route.Events.Single(item => item.Id == firstEvent.Id).Revision > firstEvent.Revision);
+        Assert.IsGreaterThan(firstEvent.Revision, route.Events.Single(item => item.Id == firstEvent.Id).Revision);
 
         var reorderResponse = await client.PostAsJsonAsync($"/api/routes/{route.Id}:reorder", new { eventIds = new[] { secondEvent.Id, firstEvent.Id } });
         reorderResponse.EnsureSuccessStatusCode();
@@ -340,7 +369,7 @@ public sealed class StoryApiTests
         damageResponse.EnsureSuccessStatusCode();
         var damage = await damageResponse.Content.ReadFromJsonAsync<DamageCalculationResult>();
         Assert.IsNotNull(damage);
-        Assert.IsTrue(damage.MinimumDamage <= damage.MaximumDamage);
+        Assert.IsLessThanOrEqualTo(damage.MaximumDamage, damage.MinimumDamage);
         Assert.AreEqual(4m, damage.AppliedModifiers.Single(item => item.Code == "effectiveness").Multiplier);
         Assert.IsTrue(damage.SourceReferences.Any(item => item.ReferenceType == "calculation-preset"));
 
