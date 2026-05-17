@@ -1,8 +1,8 @@
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PokemonDamageCalculatorForStory.Application.Identity;
 using PokemonDamageCalculatorForStory.Application.Services;
 using PokemonDamageCalculatorForStory.Domain.Models;
 using PokemonDamageCalculatorForStory.Domain.Ports;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace PokemonDamageCalculatorForStory.Tests;
 
@@ -22,50 +22,87 @@ public sealed class PokemonStoryServiceTests
     }
 
     [TestMethod]
-    public async Task CalculateDamageAsync_WithStabAndCritical_IncludesModifierReferences()
+    public async Task CalculateDamageAsync_WithCentralizedTypeChartAndPpWarning_IncludesDerivedData()
     {
-        var service = CreateService(out var seededRun, includeInitialState: true);
+        var service = CreateService(out var seededRun, includeInitialState: true, negativePp: true);
         var battle = seededRun.Routes[0].Battles[0];
+        var partyMember = seededRun.InitialState!.BaselineParty[0];
 
         var result = await service.CalculateDamageAsync(
             new DamageCalculationRequest(
                 seededRun.Id,
                 seededRun.Routes[0].Id,
                 battle.Id,
+                partyMember.PartyMemberId,
                 "Spark",
                 65,
-                "Electric",
-                new CombatantSnapshot("Pikachu", 18, 41, 26, "Electric", "Magnet"),
-                new CombatantSnapshot("Wingull", 14, 20, 18, "Water", null),
+                PokemonType.Electric,
+                new CombatantSnapshot("Pikachu", 18, 41, 26, PokemonType.Electric, null, "Magnet"),
+                new CombatantSnapshot("Wingull", 14, 20, 18, PokemonType.Water, PokemonType.Flying, null),
                 true,
-                2m,
+                null,
                 Array.Empty<DamageModifier>()),
             CancellationToken.None);
 
-        Assert.IsTrue(result.MinimumDamage > 0);
+        Assert.IsGreaterThan(0, result.MinimumDamage);
         CollectionAssert.Contains(result.AppliedModifiers.Select(item => item.Code).ToList(), "stab");
         CollectionAssert.Contains(result.AppliedModifiers.Select(item => item.Code).ToList(), "critical");
-        Assert.IsTrue(result.SourceReferences.Count >= 3);
+        Assert.AreEqual(4m, result.AppliedModifiers.Single(item => item.Code == "effectiveness").Multiplier);
+        Assert.IsNotEmpty(result.Warnings);
     }
 
-    private static PokemonStoryService CreateService(out RunAggregate seededRun, bool includeInitialState = false)
+    private static PokemonStoryService CreateService(out RunAggregate seededRun, bool includeInitialState = false, bool negativePp = false)
     {
         var ruleset = new Ruleset(Guid.Parse("11111111-1111-1111-1111-111111111111"), "gen3-emerald-story", "Gen3", "Pokemon Emerald", "story-v1", "active", "foundation");
-        var versionSet = new MasterVersionSet(Guid.Parse("22222222-2222-2222-2222-222222222222"), ruleset.Id, "seed", DateTimeOffset.UtcNow, true, new[] { new SourceReference("seed", "seed", "spreadsheet") });
+        var versionSet = new MasterVersionSet(
+            Guid.Parse("22222222-2222-2222-2222-222222222222"),
+            ruleset.Id,
+            "seed",
+            DateTimeOffset.UtcNow,
+            true,
+            new VersionCatalog(
+                "damage-v1",
+                "experience-v1",
+                "pokemon-master-v1",
+                "move-master-v1",
+                "ability-master-v1",
+                "item-master-v1",
+                "type-chart-v1",
+                "nature-master-v1",
+                "story-enemy-master-v1",
+                "experience-table-v1",
+                "effort-value-master-v1",
+                "pp-rule-v1",
+                Array.Empty<string>(),
+                Array.Empty<Guid>()),
+            new[] { new SourceReference("seed", "seed", "spreadsheet") });
         var route = new RoutePlan(
             Guid.NewGuid(),
             Guid.NewGuid(),
             "Route 103",
             false,
             "seed",
-            new[] { new ProgressionEvent(Guid.NewGuid(), 1, "gain-exp", "Defeat wild battle", 1, 30, "story", 1) },
+            Array.Empty<ProgressionEvent>(),
             new[]
             {
-                new BattleDefinition(Guid.NewGuid(), Guid.Empty, "May 1", "arbitrary", "trainer", false, null, null, new[]
-                {
-                    new EnemyCombatant("Wingull", 14, 36, 20, 18, null)
-                }, null)
+                new BattleDefinition(
+                    Guid.NewGuid(),
+                    Guid.Empty,
+                    "May 1",
+                    "arbitrary",
+                    "trainer",
+                    false,
+                    null,
+                    null,
+                    new[]
+                    {
+                        new EnemyCombatant("Wingull", 14, 36, 20, 18, new PokemonTypeSlot(PokemonType.Water, PokemonType.Flying), 64, new StatValues(0, 0, 0, 0, 0, 1), null)
+                    },
+                    Array.Empty<Guid>(),
+                    Array.Empty<BattleParticipationPlan>(),
+                    null)
             },
+            Array.Empty<Guid>(),
             null);
 
         seededRun = new RunAggregate(
@@ -75,7 +112,31 @@ public sealed class PokemonStoryServiceTests
             versionSet.Id,
             "Emerald run",
             "draft",
-            includeInitialState ? new RunInitialState(1, "Pikachu", 18, 41, 26, 3200, "Magnet", new[] { "Spark" }, null) : null,
+            includeInitialState
+                ? new RunInitialState(
+                    1,
+                    3200,
+                    new[]
+                    {
+                        new PartyMemberDefinition(
+                            Guid.Parse("33333333-3333-3333-3333-333333333333"),
+                            1,
+                            "Pikachu",
+                            18,
+                            5832,
+                            new StatValues(31, 31, 31, 31, 31, 31),
+                            new StatValues(0, 0, 0, 0, 0, 0),
+                            "Timid",
+                            "Static",
+                            new CombatStatSnapshot(50, 41, 26, 30, 30, 40),
+                            new PokemonTypeSlot(PokemonType.Electric, null),
+                            "Magnet",
+                            new[] { new MoveState("Spark", 20, negativePp ? -1 : 10) },
+                            null,
+                            true)
+                    },
+                    null)
+                : null,
             new[] { route },
             Array.Empty<EnemyGroupDefinition>(),
             DateTimeOffset.UtcNow,
@@ -92,31 +153,19 @@ public sealed class PokemonStoryServiceTests
             new InMemoryRulesetRepository(ruleset, versionSet),
             new InMemoryRunRepository(seededRun),
             new InMemoryShareRepository(),
-            new InMemoryImportJobRepository());
+            new InMemoryImportJobRepository(),
+            new StoryProgressionProjector());
     }
 
-    private sealed class FakeCurrentUserAccessor : ICurrentUserAccessor
+    private sealed class FakeCurrentUserAccessor(CurrentUser? currentUser) : ICurrentUserAccessor
     {
-        private readonly CurrentUser? _currentUser;
-
-        public FakeCurrentUserAccessor(CurrentUser? currentUser)
-        {
-            _currentUser = currentUser;
-        }
-
-        public CurrentUser? GetCurrentUser() => _currentUser;
+        public CurrentUser? GetCurrentUser() => currentUser;
     }
 
-    private sealed class InMemoryRulesetRepository : IRulesetRepository
+    private sealed class InMemoryRulesetRepository(Ruleset ruleset, MasterVersionSet versionSet) : IRulesetRepository
     {
-        private readonly Dictionary<Guid, Ruleset> _rulesets;
-        private readonly Dictionary<Guid, MasterVersionSet> _versionSets;
-
-        public InMemoryRulesetRepository(Ruleset ruleset, MasterVersionSet versionSet)
-        {
-            _rulesets = new Dictionary<Guid, Ruleset> { [ruleset.Id] = ruleset };
-            _versionSets = new Dictionary<Guid, MasterVersionSet> { [versionSet.Id] = versionSet };
-        }
+        private readonly Dictionary<Guid, Ruleset> _rulesets = new() { [ruleset.Id] = ruleset };
+        private readonly Dictionary<Guid, MasterVersionSet> _versionSets = new() { [versionSet.Id] = versionSet };
 
         public Task<Ruleset?> FindRulesetAsync(Guid rulesetId, CancellationToken cancellationToken = default)
             => Task.FromResult(_rulesets.TryGetValue(rulesetId, out var value) ? value : null);
@@ -137,14 +186,9 @@ public sealed class PokemonStoryServiceTests
         }
     }
 
-    private sealed class InMemoryRunRepository : IRunRepository
+    private sealed class InMemoryRunRepository(RunAggregate run) : IRunRepository
     {
-        private readonly Dictionary<Guid, RunAggregate> _runs;
-
-        public InMemoryRunRepository(RunAggregate run)
-        {
-            _runs = new Dictionary<Guid, RunAggregate> { [run.Id] = run };
-        }
+        private readonly Dictionary<Guid, RunAggregate> _runs = new() { [run.Id] = run };
 
         public Task<RunAggregate?> FindRunAsync(Guid runId, CancellationToken cancellationToken = default)
             => Task.FromResult(_runs.TryGetValue(runId, out var value) ? value : null);

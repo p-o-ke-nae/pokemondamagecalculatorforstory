@@ -36,8 +36,9 @@
 | Module | Responsibility | Notes |
 |---|---|---|
 | `Rulesets` | `Ruleset` と `MasterVersionSet` の参照・公開状態管理 | run 作成時は最新の published version set を採用する |
-| `Scenarios` | `RunAggregate`, `RunInitialState`, `RoutePlan`, `ProgressionEvent`, `BattleDefinition`, `EnemyGroupDefinition` を管理する | route 変更時は fingerprint と stale 状態を更新する |
-| `Calculations` | route verification、single-case damage、compare-patterns、threshold-search を提供する | すべて `PokemonStoryService` 内の簡易ロジックで実装する |
+| `Scenarios` | `RunAggregate`, `RunInitialState`, `RoutePlan`, `ProgressionEvent`, `BattleDefinition`, `EnemyGroupDefinition` を管理する | `RunInitialState` は最大 6 体の baseline party を保持する |
+| `Progression` | `BattleParticipationPlan`, `RouteProgressionProjection`, EXP / EV / PP の再導出を提供する | `StoryProgressionProjector` が damage とは別コードパスで処理する |
+| `Calculations` | route verification、single-case damage、compare-patterns、threshold-search を提供する | type chart は `PokemonTypeChart` で一元化した |
 | `Sharing` | `SharedRouteSnapshot`, `RouteRevision`, `ShareComment`, `ShareDiffResult` を扱う | mutable run/route から revision snapshot JSON を生成する |
 | `IdentityAccess` | provider 非依存の current user abstraction と policy 名を提供する | Google claim は Web 層で吸収する |
 | `AdminImports` | import job と master version publish を提供する | まだ workbook 内容の解析は行わない |
@@ -48,10 +49,11 @@
 
 | Category | Resource | Update rule | Used by |
 |---|---|---|---|
-| Editable authority | `RunInitialState` | `PUT /api/runs/{runId}/initial-state` で更新し revision を加算 | verification、threshold-search、share snapshot |
-| Event authority | ordered `ProgressionEvent` | add / update / reorder 時に sequence と revision を更新 | fingerprint、stale 管理 |
+| Editable authority | `RunInitialState` | `PUT /api/runs/{runId}/initial-state` で更新し revision を加算 | baseline money / party / move PP を保持し verification、progression、share snapshot に使う |
+| Event authority | ordered `ProgressionEvent` | add / update / reorder 時に sequence と revision を更新 | battle-result / rare-candy / pp-restore / species-change などの再計算根拠になる |
 | Editable scenario extension | `BattleDefinition` / `EnemyGroupDefinition` | user-owned run 配下で保存 | quick search、verification、damage 入力の参照 |
 | Version authority | `MasterVersionSet` | seed、import commit、admin publish で更新 | run 作成、verification、damage source reference |
+| Derived artifact | `RouteProgressionProjection` | request 時に再生成し PP warning や reserve EXP を可視化する | progression、damage warning、share snapshot |
 | Derived artifact | `RouteVerificationResult` | request 時に再生成し route を非 stale 化 | route verification |
 | Derived artifact | `DamageCalculationResult` / compare / threshold | request 時に計算 | explanation、formula trace |
 | Immutable collaboration artifact | `SharedRouteSnapshot` / `RouteRevision` | publish 時のみ追加 | comments、diff、review |
@@ -64,18 +66,25 @@ flowchart LR
     EV[Ordered ProgressionEvents]
     MV[MasterVersionSet]
     RS[Ruleset Strategy]
+    PR[Progression Projector]
     RV[Route-wide Verification]
     DC[Damage Calculation Kernel]
     SH[Snapshot / Revision]
 
+    IS --> PR
+    EV --> PR
+    MV --> PR
     IS --> RV
     EV --> RV
     MV --> RS
     MV --> RV
     RS --> DC
+    PR --> RV
     IS --> DC
     EV --> DC
+    PR --> DC
     RV --> SH
+    PR --> SH
     DC --> SH
 ```
 
@@ -93,14 +102,15 @@ flowchart LR
 | rulesets | `GET /api/rulesets`, `GET /api/rulesets/{id}` | Anonymous | seed ruleset を含む参照 API |
 | master version set inspect | `GET /api/master-version-sets/{id}` | Anonymous | run が参照している version set を確認できる |
 | runs | `GET/POST /api/runs`, `GET/PUT /api/runs/{id}` | Run owner | run 作成時に最新 published version set を固定する |
-| initial state | `GET/PUT /api/runs/{id}/initial-state` | Run owner | species、level、attack、defense、moves は必須 |
+| initial state | `GET/PUT /api/runs/{id}/initial-state` | Run owner | baseline money と最大 6 体 party を保持する |
 | routes | `POST /api/runs/{runId}/routes`, `POST /api/routes/{id}:reorder` | Run owner | route 一覧 API は未追加。run 詳細レスポンスで参照する |
-| progression events | `POST /api/routes/{id}/events`, `PUT /api/routes/{id}/events/{eventId}` | Run owner | add 時は末尾追加、reorder で sequence を再採番する |
+| progression events | `POST /api/routes/{id}/events`, `PUT /api/routes/{id}/events/{eventId}` | Run owner | per-member EXP / EV / PP delta、Rare Candy、species-change を表現する |
 | enemy groups | `POST /api/runs/{runId}/enemy-groups`, `PUT /api/runs/{runId}/enemy-groups/{groupId}` | Run owner | custom-group battle の再利用単位 |
-| battles | `POST /api/routes/{id}/battles`, `PUT /api/routes/{id}/battles/{battleId}` | Run owner | `custom-group` と `arbitrary` をサポート |
+| battles | `POST /api/routes/{id}/battles`, `PUT /api/routes/{id}/battles/{battleId}`, `PUT /api/battles/{battleId}/participation` | Run owner | `custom-group` と `arbitrary` をサポートし、participation mode と manual outcome を更新できる |
 | battle quick search | `GET /api/runs/{runId}/battles:search?keyword=` | Run owner | title または敵要約で検索する |
-| route verification | `POST /api/routes/{id}:verify`, `GET /api/routes/{id}/verification` | Run owner | 実装は同一 service method を呼ぶ |
-| damage | `POST /api/calculations/damage` | Run owner | STAB、タイプ相性、急所、追加 modifiers を適用 |
+| progression projection | `GET /api/routes/{id}/progression`, `POST /api/routes/{id}:recalculate` | Run owner | per-member progression、reserve EXP、PP warning を返す |
+| route verification | `POST /api/routes/{id}:verify`, `GET /api/routes/{id}/verification` | Run owner | progression warning も取り込む |
+| damage | `POST /api/calculations/damage` | Run owner | STAB、中央管理のタイプ相性、急所、追加 modifiers、PP warning を適用 |
 | compare-patterns | `POST /api/calculations/compare-patterns` | Run owner | base case に対する差分比較 |
 | threshold-search | `POST /api/calculations/threshold-search` | Run owner | 初期状態と battle 先頭敵から候補探索 |
 | shares | `POST /api/shares`, `GET /api/shares/{shareId}` | Write: Run owner / Read: `public` は Anonymous、それ以外は owner | `private` / `unlisted` は owner のみ参照できる |
@@ -113,24 +123,26 @@ flowchart LR
 | Resource | Key fields | Notes |
 |---|---|---|
 | `Ruleset` | `id`, `slug`, `generation`, `title`, `version`, `status`, `summary` | 現在の seed は `gen3-emerald-story` |
-| `MasterVersionSet` | `id`, `rulesetId`, `label`, `importedAt`, `isPublished`, `masterSources` | import commit でも新規作成される |
+| `MasterVersionSet` | `id`, `rulesetId`, `label`, `importedAt`, `isPublished`, `versionCatalog`, `masterSources` | damage / experience / type chart / PP rule の版を分けて保持する |
 | `RunAggregate` | `id`, `ownerUserId`, `rulesetId`, `masterVersionSetId`, `name`, `status`, `routes`, `enemyGroups` | owner は provider 非依存文字列 |
-| `RunInitialState` | `revision`, `playerSpecies`, `level`, `attack`, `defense`, `money`, `heldItem`, `moves`, `memo` | EV / IV / nature などは未導入 |
-| `Route` | `routeId`, `runId`, `name`, `stale`, `progressionFingerprint` | battle quick search の対象になる |
-| `ProgressionEvent` | `id`, `sequence`, `eventType`, `summary`, `levelDelta`, `moneyDelta`, `sourceReference`, `revision` | payload 汎用化ではなく基礎項目に絞っている |
-| `EnemyGroupDefinition` | `id`, `runId`, `name`, `sourceKind`, `members[]` | members は species / level / hp / attack / defense / note |
-| `BattleDefinition` | `id`, `routeId`, `title`, `sourceKind`, `battleKind`, `isOptional`, `masterBattleCode`, `enemyGroupId`, `inlineEnemies`, `notes` | delete API は未提供 |
+| `RunInitialState` | `revision`, `baselineMoney`, `baselineParty[]`, `memo` | IV / EV / nature / ability / held item / moves / PP を member ごとに保持する |
+| `Route` | `routeId`, `runId`, `name`, `stale`, `progressionFingerprint`, `simulatedPartyMemberIds[]` | route ごとに主対象の手持ちを絞れる |
+| `ProgressionEvent` | `id`, `sequence`, `eventType`, `summary`, `linkedBattleId`, `moneyDelta`, `partyDeltas[]`, `revision` | per-member EXP / EV / PP / rare candy / species-change を保持する |
+| `EnemyGroupDefinition` | `id`, `runId`, `name`, `sourceKind`, `members[]` | members は type、base exp yield、EV yield も持つ |
+| `BattleDefinition` | `id`, `routeId`, `title`, `sourceKind`, `battleKind`, `enemyGroupId`, `inlineEnemies`, `suggestedPartyMemberIds[]`, `participations[]`, `notes` | delete API は未提供 |
+| `RouteProgressionProjection` | `routeId`, `partyMembers[]`, `warnings[]`, `progressionFingerprint` | PP 不足や reserve EXP 反映後の読取モデル |
 | `RouteVerificationResult` | `routeId`, `verifiedAt`, `summary`, `issues[]`, `warnings[]`, `sourceReferences[]` | verification 実行で route を non-stale に戻す |
-| `DamageCalculationResult` | `minimumDamage`, `maximumDamage`, `appliedModifiers[]`, `explanation[]`, `formulaTrace[]`, `sourceReferences[]` | explanation は 2 行、trace は文字列配列 |
-| `SharedRouteSnapshot` | `id`, `ownerUserId`, `runId`, `routeId`, `visibility`, `baseRevisionId`, `currentRevisionId`, `revisions[]`, `comments[]` | revision 本文は snapshot JSON |
+| `DamageCalculationResult` | `minimumDamage`, `maximumDamage`, `appliedModifiers[]`, `explanation[]`, `formulaTrace[]`, `warnings[]`, `sourceReferences[]` | PP warning を hard blocker にせず返す |
+| `SharedRouteSnapshot` | `id`, `ownerUserId`, `runId`, `routeId`, `visibility`, `baseRevisionId`, `currentRevisionId`, `fixedVersionCatalog`, `revisions[]`, `comments[]` | revision 本文は snapshot JSON |
 | `ImportJob` | `id`, `rulesetId`, `workbookName`, `mode`, `status`, `messages[]`, `publishedMasterVersionSetId` | commit 時だけ version set を追加作成する |
 
 ## 6. Known Simplifications and Limitations
 
 - damage calculation は foundation 用の簡易式で、世代別の詳細ルールや複数防御指標までは扱わない
+- progression projector は separate code path だが、EXP / EV / PP 式は foundation 向けの簡易係数で実装している
 - threshold-search は run の初期状態と battle の先頭敵を使う簡易探索で、critical・追加 modifier・タイプ相性探索は行わない
 - quick search は title と敵要約の部分一致検索のみ
 - share visibility は `public` / `private` / `unlisted` を受け付けるが、現実装で匿名 read を許可するのは `public` のみ
-- share diff は `route.name`、event 数、battle 数、initial-state revision の構造差分のみ
+- share diff は `route.name`、event 数、battle 数、initial-state revision に加え `damageRulesetVersion` / `experienceRulesetVersion` の差分を比較する
 - import は workbook 名ベースの job / version set 作成までで、実ファイル解析や validation 詳細は stub
 - delete API、pagination、optimistic concurrency、OpenAPI 用の詳細 schema 注釈は未導入

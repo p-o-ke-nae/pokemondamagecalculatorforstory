@@ -22,20 +22,22 @@
 
 | Test file | Level | Main coverage |
 |---|---|---|
-| `PokemonStoryServiceTests.cs` | Service / Unit | verification issue 生成、damage modifier と source reference の確認 |
-| `StoryApiTests.cs` | API / Integration | ruleset → run → initial state → route → enemy group → battle → search → verify → calculations の E2E |
-| `StoryApiTests.cs` | API / Integration | share / comment / revision / diff と admin import / master-version-set API の E2E |
+| `PokemonStoryServiceTests.cs` | Service / Unit | verification issue 生成、中央管理 type chart、PP warning 付き damage calculation の確認 |
+| `StoryApiTests.cs` | API / Integration | ruleset → run → initial state(最大 6 体 party) → route → enemy group → battle → participation → progression → verify → calculations の E2E |
+| `StoryApiTests.cs` | API / Integration | share / comment / revision / diff と admin import / master-version-set API、および PP warning 継続実行の E2E |
 
 ## 2. Automated Coverage Matrix
 
 | Area | Covered behavior | Test level |
 |---|---|---|
 | Sample replacement | `GET /api/rulesets` から story calculator domain を返す | Integration |
-| Run lifecycle | run 作成、初期状態更新、route 作成が通る | Integration |
-| Enemy modeling | custom enemy group と arbitrary/custom-group battle を作成できる | Integration |
+| Run lifecycle | run 作成、party baseline 初期状態更新、route 作成が通る | Integration |
+| Enemy modeling | custom enemy group と arbitrary/custom-group battle を作成でき、敵に type / EXP / EV yield を持てる | Integration |
+| Battle participation | battle ごとの suggested party と participation mode を更新できる | Integration |
+| Progression projection | route progression 取得と再計算で per-member EXP / EV / PP 状態を返す | Integration |
 | Quick search | keyword 検索で battle hit を返す | Integration |
 | Route verification | missing initial state issue と正常系 verification を返す | Unit / Integration |
-| Damage calculation | damage range、applied modifiers、source references を返す | Unit / Integration |
+| Damage calculation | damage range、centralized type effectiveness、PP warning、source references を返す | Unit / Integration |
 | Compare-patterns | 1 パターン以上の比較結果を返す | Integration |
 | Threshold-search | candidate が返る | Integration |
 | Sharing | share 作成、comment 追加、revision 公開、diff 取得が通る | Integration |
@@ -49,17 +51,18 @@
 | Scenario ID | Assertion |
 |---|---|
 | `PDC-UT-01` | 初期状態なしの route verification は `initial-state.missing` issue を返す |
-| `PDC-UT-02` | damage calculation は STAB / critical modifier と source reference を含む |
+| `PDC-UT-02` | damage calculation は STAB / critical modifier、中央管理 type chart、PP warning を含む |
 
 ### 3.2 API end-to-end scenarios
 
 | Scenario ID | Assertion |
 |---|---|
 | `PDC-API-01` | ruleset 一覧取得から run 作成までの foundation flow が通る |
-| `PDC-API-02` | initial state、route、enemy group、battle の登録後に quick search と route verification が成功する |
+| `PDC-API-02` | initial state、route、enemy group、battle、participation の登録後に quick search と progression / route verification が成功する |
 | `PDC-API-03` | damage / compare-patterns / threshold-search が run owner 認可の下で成功する |
-| `PDC-API-04` | share、comment、revision publish、diff 取得が成功する |
-| `PDC-API-05` | admin import は member を拒否し、admin では commit job を作成できる |
+| `PDC-API-04` | PP 不足 warning が progression に現れても damage calculation は継続できる |
+| `PDC-API-05` | share、comment、revision publish、diff 取得が成功する |
+| `PDC-API-06` | admin import は member を拒否し、admin では commit job を作成できる |
 
 ## 4. Current Gaps
 
@@ -71,6 +74,7 @@
 | Route reorder / event update | fingerprint と revision 更新の API テストは未追加 |
 | Share visibility | `public` のみ匿名 read を許可し、`private` / `unlisted` は owner 限定 |
 | Import parser | workbook 内容の解析機能自体が未実装 |
+| Detailed generation formulas | EXP / EV / PP の係数は foundation 実装であり、全世代の厳密再現までは未自動化 |
 
 ## 5. Exit View for Current Foundation
 

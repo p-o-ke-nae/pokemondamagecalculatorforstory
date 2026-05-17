@@ -6,31 +6,149 @@ internal sealed record CreateRunRequest(Guid RulesetId, string Name);
 
 internal sealed record UpdateRunRequest(string Name, string Status);
 
-internal sealed record UpsertInitialStateRequest(
-    string PlayerSpecies,
-    int Level,
+internal sealed record StatValuesRequest(
+    int Hp,
     int Attack,
     int Defense,
-    int Money,
+    int SpecialAttack,
+    int SpecialDefense,
+    int Speed)
+{
+    public StatValues ToDomain()
+        => new(Hp, Attack, Defense, SpecialAttack, SpecialDefense, Speed);
+}
+
+internal sealed record CombatStatSnapshotRequest(
+    int Hp,
+    int Attack,
+    int Defense,
+    int SpecialAttack,
+    int SpecialDefense,
+    int Speed)
+{
+    public CombatStatSnapshot ToDomain()
+        => new(Hp, Attack, Defense, SpecialAttack, SpecialDefense, Speed);
+}
+
+internal sealed record MoveStateRequest(
+    string MoveName,
+    int MaxPp,
+    int CurrentPp)
+{
+    public MoveState ToDomain()
+        => new(MoveName, MaxPp, CurrentPp);
+}
+
+internal sealed record PokemonTypeSlotRequest(
+    string PrimaryType,
+    string? SecondaryType)
+{
+    public PokemonTypeSlot ToDomain()
+        => new(StoryApiTypeParser.ParsePokemonType(PrimaryType), string.IsNullOrWhiteSpace(SecondaryType) ? null : StoryApiTypeParser.ParsePokemonType(SecondaryType));
+}
+
+internal sealed record PartyMemberRequest(
+    Guid? PartyMemberId,
+    int Slot,
+    string Species,
+    int Level,
+    int Experience,
+    StatValuesRequest IndividualValues,
+    StatValuesRequest EffortValues,
+    string Nature,
+    string Ability,
+    CombatStatSnapshotRequest CombatStats,
+    PokemonTypeSlotRequest Typing,
     string? HeldItem,
-    IReadOnlyList<string> Moves,
+    IReadOnlyList<MoveStateRequest> Moves,
+    string? Memo,
+    bool IsBattleSimulatorEnabled)
+{
+    public PartyMemberDefinition ToDomain()
+        => new(
+            PartyMemberId ?? Guid.NewGuid(),
+            Slot,
+            Species,
+            Level,
+            Experience,
+            IndividualValues.ToDomain(),
+            EffortValues.ToDomain(),
+            Nature,
+            Ability,
+            CombatStats.ToDomain(),
+            Typing.ToDomain(),
+            HeldItem,
+            Moves.Select(item => item.ToDomain()).ToArray(),
+            Memo,
+            IsBattleSimulatorEnabled);
+}
+
+internal sealed record UpsertInitialStateRequest(
+    int BaselineMoney,
+    IReadOnlyList<PartyMemberRequest> BaselineParty,
     string? Memo)
 {
     public RunInitialState ToDomain()
-        => new(0, PlayerSpecies, Level, Attack, Defense, Money, HeldItem, Moves, Memo);
+        => new(0, BaselineMoney, BaselineParty.Select(item => item.ToDomain()).ToArray(), Memo);
 }
 
-internal sealed record CreateRouteRequest(string Name);
+internal sealed record CreateRouteRequest(string Name, IReadOnlyList<Guid>? SimulatedPartyMemberIds);
+
+internal sealed record MovePpDeltaRequest(
+    string MoveName,
+    int Delta)
+{
+    public MovePpDelta ToDomain()
+        => new(MoveName, Delta);
+}
+
+internal sealed record PartyProgressionDeltaRequest(
+    Guid PartyMemberId,
+    int ExperienceDelta,
+    StatValuesRequest EffortValueDelta,
+    IReadOnlyList<MovePpDeltaRequest>? PpDeltas,
+    int RareCandyLevels,
+    string? SpeciesOverride,
+    string? AbilityOverride,
+    string? NatureOverride,
+    string? HeldItemOverride,
+    IReadOnlyList<MoveStateRequest>? ReplaceMoves,
+    string? Notes)
+{
+    public PartyProgressionDelta ToDomain()
+        => new(
+            PartyMemberId,
+            ExperienceDelta,
+            EffortValueDelta.ToDomain(),
+            PpDeltas?.Select(item => item.ToDomain()).ToArray() ?? Array.Empty<MovePpDelta>(),
+            RareCandyLevels,
+            SpeciesOverride,
+            AbilityOverride,
+            NatureOverride,
+            HeldItemOverride,
+            ReplaceMoves?.Select(item => item.ToDomain()).ToArray(),
+            Notes);
+}
 
 internal sealed record UpsertProgressionEventRequest(
     string EventType,
     string Summary,
-    int LevelDelta,
+    Guid? LinkedBattleId,
     int MoneyDelta,
-    string? SourceReference)
+    string? SourceReference,
+    IReadOnlyList<PartyProgressionDeltaRequest>? PartyDeltas)
 {
     public ProgressionEvent ToDomain()
-        => new(Guid.Empty, 0, EventType, Summary, LevelDelta, MoneyDelta, SourceReference, 0);
+        => new(
+            Guid.Empty,
+            0,
+            EventType,
+            Summary,
+            LinkedBattleId,
+            MoneyDelta,
+            SourceReference,
+            PartyDeltas?.Select(item => item.ToDomain()).ToArray() ?? Array.Empty<PartyProgressionDelta>(),
+            0);
 }
 
 internal sealed record ReorderRouteRequest(IReadOnlyList<Guid> EventIds);
@@ -41,10 +159,14 @@ internal sealed record EnemyCombatantRequest(
     int Hp,
     int Attack,
     int Defense,
+    string PrimaryType,
+    string? SecondaryType,
+    int BaseExperienceYield,
+    StatValuesRequest EffortValueYield,
     string? Note)
 {
     public EnemyCombatant ToDomain()
-        => new(Species, Level, Hp, Attack, Defense, Note);
+        => new(Species, Level, Hp, Attack, Defense, new PokemonTypeSlot(StoryApiTypeParser.ParsePokemonType(PrimaryType), string.IsNullOrWhiteSpace(SecondaryType) ? null : StoryApiTypeParser.ParsePokemonType(SecondaryType)), BaseExperienceYield, EffortValueYield.ToDomain(), Note);
 }
 
 internal sealed record UpsertEnemyGroupRequest(
@@ -56,6 +178,27 @@ internal sealed record UpsertEnemyGroupRequest(
         => new(groupId ?? Guid.Empty, runId, Name, SourceKind, Members.Select(item => item.ToDomain()).ToArray());
 }
 
+internal sealed record ManualOutcomeChecklistRequest(
+    bool SentOutAndDefeated,
+    bool DefeatedWhileInReserve,
+    bool DidNotDefeat,
+    bool IntentionalLoss)
+{
+    public ManualOutcomeChecklist ToDomain()
+        => new(SentOutAndDefeated, DefeatedWhileInReserve, DidNotDefeat, IntentionalLoss);
+}
+
+internal sealed record BattleParticipationPlanRequest(
+    Guid PartyMemberId,
+    string ParticipationMode,
+    decimal ShareRatio,
+    string? SuggestedRole,
+    ManualOutcomeChecklistRequest OutcomeChecklist)
+{
+    public BattleParticipationPlan ToDomain()
+        => new(PartyMemberId, ParticipationMode, ShareRatio, SuggestedRole, OutcomeChecklist.ToDomain());
+}
+
 internal sealed record UpsertBattleRequest(
     string Title,
     string SourceKind,
@@ -64,6 +207,8 @@ internal sealed record UpsertBattleRequest(
     string? MasterBattleCode,
     Guid? EnemyGroupId,
     IReadOnlyList<EnemyCombatantRequest> InlineEnemies,
+    IReadOnlyList<Guid>? SuggestedPartyMemberIds,
+    IReadOnlyList<BattleParticipationPlanRequest>? Participations,
     string? Notes)
 {
     public BattleDefinition ToDomain(Guid routeId, Guid? battleId = null)
@@ -77,8 +222,14 @@ internal sealed record UpsertBattleRequest(
             MasterBattleCode,
             EnemyGroupId,
             InlineEnemies.Select(item => item.ToDomain()).ToArray(),
+            SuggestedPartyMemberIds?.ToArray() ?? Array.Empty<Guid>(),
+            Participations?.Select(item => item.ToDomain()).ToArray() ?? Array.Empty<BattleParticipationPlan>(),
             Notes);
 }
+
+internal sealed record UpdateBattleParticipationRequest(
+    IReadOnlyList<Guid>? SuggestedPartyMemberIds,
+    IReadOnlyList<BattleParticipationPlanRequest> Participations);
 
 internal sealed record CombatantSnapshotRequest(
     string Species,
@@ -86,10 +237,11 @@ internal sealed record CombatantSnapshotRequest(
     int Attack,
     int Defense,
     string PrimaryType,
+    string? SecondaryType,
     string? HeldItem)
 {
     public CombatantSnapshot ToDomain()
-        => new(Species, Level, Attack, Defense, PrimaryType, HeldItem);
+        => new(Species, Level, Attack, Defense, StoryApiTypeParser.ParsePokemonType(PrimaryType), string.IsNullOrWhiteSpace(SecondaryType) ? null : StoryApiTypeParser.ParsePokemonType(SecondaryType), HeldItem);
 }
 
 internal sealed record DamageModifierRequest(
@@ -108,13 +260,14 @@ internal sealed record DamageCalculationApiRequest(
     Guid RunId,
     Guid RouteId,
     Guid BattleId,
+    Guid? PlayerPartyMemberId,
     string MoveName,
     int MovePower,
     string MoveType,
     CombatantSnapshotRequest Attacker,
     CombatantSnapshotRequest Defender,
     bool IsCritical,
-    decimal TypeEffectiveness,
+    decimal? TypeEffectivenessOverride,
     IReadOnlyList<DamageModifierRequest>? AdditionalModifiers)
 {
     public DamageCalculationRequest ToDomain()
@@ -122,13 +275,14 @@ internal sealed record DamageCalculationApiRequest(
             RunId,
             RouteId,
             BattleId,
+            PlayerPartyMemberId,
             MoveName,
             MovePower,
-            MoveType,
+            StoryApiTypeParser.ParsePokemonType(MoveType),
             Attacker.ToDomain(),
             Defender.ToDomain(),
             IsCritical,
-            TypeEffectiveness,
+            TypeEffectivenessOverride,
             AdditionalModifiers?.Select(item => item.ToDomain()).ToArray() ?? Array.Empty<DamageModifier>());
 }
 
@@ -146,6 +300,7 @@ internal sealed record ThresholdSearchApiRequest(
     Guid RunId,
     Guid RouteId,
     Guid BattleId,
+    Guid? PlayerPartyMemberId,
     string MoveName,
     string MoveType,
     int MovePowerRangeStart,
@@ -158,8 +313,9 @@ internal sealed record ThresholdSearchApiRequest(
             RunId,
             RouteId,
             BattleId,
+            PlayerPartyMemberId,
             MoveName,
-            MoveType,
+            StoryApiTypeParser.ParsePokemonType(MoveType),
             MovePowerRangeStart,
             MovePowerRangeEnd,
             MaximumAttackBonus,
@@ -173,3 +329,16 @@ internal sealed record AddCommentRequest(Guid? RevisionId, string Body);
 internal sealed record PublishRevisionRequest(string Summary);
 
 internal sealed record CreateImportJobRequest(Guid RulesetId, string WorkbookName);
+
+internal static class StoryApiTypeParser
+{
+    public static PokemonType ParsePokemonType(string rawType)
+    {
+        if (!Enum.TryParse<PokemonType>(rawType, ignoreCase: true, out var parsed))
+        {
+            throw new ArgumentException($"未知のポケモンタイプです: {rawType}");
+        }
+
+        return parsed;
+    }
+}

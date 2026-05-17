@@ -34,10 +34,10 @@
 | 観点 | 実装状況 |
 |---|---|
 | サンプル置換 | `WeatherForecast` は撤去済みで、`Program.cs` の minimal API が story calculator foundation を公開する |
-| モジュール境界 | `Rulesets`, `Runs/Routes`, `Calculations`, `Sharing`, `IdentityAccess`, `AdminImports` を 1 つの `PokemonStoryService` が束ねる |
-| 状態の authority | `RunInitialState`、ordered `ProgressionEvent`、`MasterVersionSet`、`BattleDefinition` / `EnemyGroupDefinition` を保存し、verification / damage / diff は導出する |
+| モジュール境界 | `Rulesets`, `Runs/Routes`, `BattleParticipation`, `ProgressionProjection`, `Calculations`, `Sharing`, `IdentityAccess`, `AdminImports` を `PokemonStoryService` と独立した進捗計算補助へ束ねる |
+| 状態の authority | `RunInitialState`（最大 6 体 party）、ordered `ProgressionEvent`、`BattleParticipationPlan`、`MasterVersionSet`、`BattleDefinition` / `EnemyGroupDefinition` を保存し、verification / progression / damage / diff は導出する |
 | 認証と認可 | 通常実行時は Google access token bearer、run 系は所有者必須、admin 系は `Administrator` ロール必須 |
-| 現時点の簡略化 | import は job 作成中心、share 公開範囲は `public` のみ匿名 read、damage / threshold / diff は foundation 用の簡易ロジック |
+| 現時点の簡略化 | import は job 作成中心、share 公開範囲は `public` のみ匿名 read、damage / progression / threshold / diff は foundation 用の簡易ロジック |
 
 ### モジュール関係
 
@@ -65,8 +65,8 @@ graph TD
 
 | Layer | 主な責務 | Sequencing note |
 |---|---|---|
-| Domain | records 中心の authority model、damage result、share/import artifact を定義 | 現在はシンプルな record ベース。複雑な ruleset strategy 差し替えは未着手 |
-| Application | `PokemonStoryService` が run 管理、verification、damage、share、import を集約する | foundation 段階として use case 分割より単一 service を優先 |
+| Domain | records 中心の authority model、party progression、damage result、share/import artifact を定義 | `PokemonType` と `VersionCatalog` を domain の核として持つ |
+| Application | `PokemonStoryService` が run 管理、verification、progression、damage、share、import を集約する | `StoryProgressionProjector` と `PokemonTypeChart` を分離し、EXP / EV / PP と damage を別コードパスにした |
 | Infrastructure | EF Core + SQL Server / InMemory、JSON 永続化 repository、初期 seed を提供する | 非 production 起動時に migration と seed を自動適用する |
 | Web | minimal API、Google bearer auth、Swagger、problem details を提供する | 開発環境のみ Swagger UI を公開する |
 | Tests | service test と API E2E で foundation 契約を固定する | SQL Server 永続化や Google 実トークン検証までは未自動化 |
@@ -76,10 +76,11 @@ graph TD
 | Capability | 実装状況 | Notes |
 |---|---|---|
 | rulesets / master version set | 実装済み | ruleset 一覧/詳細、version set 詳細、admin 一覧/公開を提供 |
-| run / initial state / route / progression events | 実装済み | create / update / reorder と stale 管理を提供 |
+| run / initial state / route / progression events | 実装済み | 最大 6 体 party、simulation scope、per-member delta を保存し stale 管理を提供 |
+| battle participation / progression projection | 実装済み | battle ごとの participation 更新、route progression 取得 / 再計算、PP warning を提供 |
 | battle quick search | 実装済み | title と敵要約で検索する簡易 quick search |
-| route-wide verification | 実装済み | 初期状態欠落、event sequence gap、enemy group 欠落、arbitrary battle 空、optional battle warning を検出 |
-| single-case damage calculation | 実装済み | STAB、タイプ相性、急所、追加 modifier を使う簡易式 |
+| route-wide verification | 実装済み | 初期状態欠落、party/participation 整合性、event sequence gap、enemy group 欠落、arbitrary battle 空、optional battle warning、PP warning を検出 |
+| single-case damage calculation | 実装済み | STAB、中央管理のタイプ相性、急所、追加 modifier、PP warning を使う簡易式 |
 | compare-patterns | 実装済み | base case から move power / attack bonus / extra modifiers を比較する |
 | threshold-search | 実装済み | 初期状態と先頭敵を使う簡易探索 |
 | sharing / comments / diff / revision | 実装済み | snapshot publish、revision publish、comment、構造 diff を提供 |

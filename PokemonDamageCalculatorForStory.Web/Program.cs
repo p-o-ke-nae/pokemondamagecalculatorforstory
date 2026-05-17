@@ -89,6 +89,7 @@ builder.Services.AddScoped<IRunRepository, RunRepository>();
 builder.Services.AddScoped<IShareRepository, ShareRepository>();
 builder.Services.AddScoped<IImportJobRepository, ImportJobRepository>();
 builder.Services.AddScoped<ICurrentUserAccessor, HttpContextCurrentUserAccessor>();
+builder.Services.AddScoped<StoryProgressionProjector>();
 builder.Services.AddScoped<PokemonStoryService>();
 
 var app = builder.Build();
@@ -162,6 +163,9 @@ mapRunEndpoints(runs);
 
 var routes = api.MapGroup("/routes").RequireAuthorization(AppPolicies.RunOwner);
 mapRouteEndpoints(routes);
+
+var battles = api.MapGroup("/battles").RequireAuthorization(AppPolicies.RunOwner);
+mapBattleEndpoints(battles);
 
 api.MapPost("/calculations/damage", async (DamageCalculationApiRequest request, PokemonStoryService service, CancellationToken cancellationToken) =>
         Results.Ok(await service.CalculateDamageAsync(request.ToDomain(), cancellationToken)))
@@ -246,7 +250,7 @@ static void mapRunEndpoints(RouteGroupBuilder runs)
         Results.Ok(await service.UpsertInitialStateAsync(runId, request.ToDomain(), cancellationToken)));
 
     runs.MapPost("/{runId:guid}/routes", async (Guid runId, CreateRouteRequest request, PokemonStoryService service, CancellationToken cancellationToken) =>
-        Results.Ok(await service.CreateRouteAsync(runId, request.Name, cancellationToken)));
+        Results.Ok(await service.CreateRouteAsync(runId, request.Name, request.SimulatedPartyMemberIds, cancellationToken)));
 
     runs.MapPost("/{runId:guid}/enemy-groups", async (Guid runId, UpsertEnemyGroupRequest request, PokemonStoryService service, CancellationToken cancellationToken) =>
         Results.Ok(await service.AddEnemyGroupAsync(runId, request.ToDomain(runId), cancellationToken)));
@@ -281,6 +285,22 @@ static void mapRouteEndpoints(RouteGroupBuilder routes)
 
     routes.MapGet("/{routeId:guid}/verification", async (Guid routeId, PokemonStoryService service, CancellationToken cancellationToken) =>
         Results.Ok(await service.VerifyRouteAsync(routeId, cancellationToken)));
+
+    routes.MapGet("/{routeId:guid}/progression", async (Guid routeId, PokemonStoryService service, CancellationToken cancellationToken) =>
+        Results.Ok(await service.GetRouteProgressionAsync(routeId, cancellationToken)));
+
+    routes.MapPost("/{routeId:guid}:recalculate", async (Guid routeId, PokemonStoryService service, CancellationToken cancellationToken) =>
+        Results.Ok(await service.RecalculateRouteAsync(routeId, cancellationToken)));
+}
+
+static void mapBattleEndpoints(RouteGroupBuilder battles)
+{
+    battles.MapPut("/{battleId:guid}/participation", async (Guid battleId, UpdateBattleParticipationRequest request, PokemonStoryService service, CancellationToken cancellationToken) =>
+        Results.Ok(await service.UpdateBattleParticipationAsync(
+            battleId,
+            request.SuggestedPartyMemberIds?.ToArray() ?? Array.Empty<Guid>(),
+            request.Participations.Select(item => item.ToDomain()).ToArray(),
+            cancellationToken)));
 }
 
 static bool ShouldUseHttpsRedirection(IConfiguration configuration)

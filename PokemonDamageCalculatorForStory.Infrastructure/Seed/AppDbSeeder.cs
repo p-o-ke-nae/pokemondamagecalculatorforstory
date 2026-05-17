@@ -34,6 +34,21 @@ public static class AppDbSeeder
                 "emerald-master-2026-05-foundation",
                 DateTimeOffset.Parse("2026-05-16T00:00:00Z"),
                 true,
+                new VersionCatalog(
+                    "gen3-emerald-story:damage:story-v1",
+                    "gen3-emerald-story:experience:story-v1",
+                    "pokemon-master-foundation",
+                    "move-master-foundation",
+                    "ability-master-foundation",
+                    "item-master-foundation",
+                    "type-chart-foundation",
+                    "nature-master-foundation",
+                    "story-enemy-master-foundation",
+                    "experience-table-foundation",
+                    "effort-value-master-foundation",
+                    "pp-rule-foundation",
+                    Array.Empty<string>(),
+                    Array.Empty<Guid>()),
                 new[]
                 {
                     new SourceReference("master.trainers", "trainers.csv", "spreadsheet"),

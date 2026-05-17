@@ -13,6 +13,7 @@ public sealed class PokemonStoryService
     private static readonly JsonSerializerOptions SnapshotSerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly ICurrentUserAccessor _currentUserAccessor;
     private readonly IImportJobRepository _importJobRepository;
+    private readonly StoryProgressionProjector _progressionProjector;
     private readonly IRulesetRepository _rulesetRepository;
     private readonly IRunRepository _runRepository;
     private readonly IShareRepository _shareRepository;
@@ -23,13 +24,15 @@ public sealed class PokemonStoryService
         IRulesetRepository rulesetRepository,
         IRunRepository runRepository,
         IShareRepository shareRepository,
-        IImportJobRepository importJobRepository)
+        IImportJobRepository importJobRepository,
+        StoryProgressionProjector progressionProjector)
     {
         _currentUserAccessor = currentUserAccessor;
         _rulesetRepository = rulesetRepository;
         _runRepository = runRepository;
         _shareRepository = shareRepository;
         _importJobRepository = importJobRepository;
+        _progressionProjector = progressionProjector;
     }
 
     /// <summary>ルールセット一覧を取得します。</summary>
@@ -57,10 +60,7 @@ public sealed class PokemonStoryService
 
     /// <summary>run 詳細を取得します。</summary>
     public async Task<RunAggregate> GetRunAsync(Guid runId, CancellationToken cancellationToken)
-    {
-        var run = await RequireOwnedRunAsync(runId, cancellationToken);
-        return run;
-    }
+        => await RequireOwnedRunAsync(runId, cancellationToken);
 
     /// <summary>run を作成します。</summary>
     public async Task<RunAggregate> CreateRunAsync(Guid rulesetId, string name, CancellationToken cancellationToken)
@@ -134,7 +134,7 @@ public sealed class PokemonStoryService
     }
 
     /// <summary>route を作成します。</summary>
-    public async Task<RoutePlan> CreateRouteAsync(Guid runId, string name, CancellationToken cancellationToken)
+    public async Task<RoutePlan> CreateRouteAsync(Guid runId, string name, IReadOnlyList<Guid>? simulatedPartyMemberIds, CancellationToken cancellationToken)
     {
         var run = await RequireOwnedRunAsync(runId, cancellationToken);
         if (string.IsNullOrWhiteSpace(name))
@@ -151,6 +151,7 @@ public sealed class PokemonStoryService
                 "empty",
                 Array.Empty<ProgressionEvent>(),
                 Array.Empty<BattleDefinition>(),
+                simulatedPartyMemberIds?.ToArray() ?? Array.Empty<Guid>(),
                 null));
 
         var updated = run with
@@ -167,6 +168,8 @@ public sealed class PokemonStoryService
     public async Task<RoutePlan> AddProgressionEventAsync(Guid routeId, ProgressionEvent progressionEvent, CancellationToken cancellationToken)
     {
         var (run, route) = await RequireOwnedRouteAsync(routeId, cancellationToken);
+        ValidateProgressionEvent(run, route, progressionEvent);
+
         var nextSequence = route.Events.Count + 1;
         var eventToAdd = progressionEvent with
         {
@@ -189,9 +192,10 @@ public sealed class PokemonStoryService
     public async Task<RoutePlan> UpdateProgressionEventAsync(Guid routeId, Guid eventId, ProgressionEvent progressionEvent, CancellationToken cancellationToken)
     {
         var (run, route) = await RequireOwnedRouteAsync(routeId, cancellationToken);
+        ValidateProgressionEvent(run, route, progressionEvent);
+
         var existing = route.Events.SingleOrDefault(item => item.Id == eventId)
             ?? throw new KeyNotFoundException("指定された progression event が見つかりません。");
-
         var updatedEvents = route.Events
             .Select(item => item.Id == eventId
                 ? progressionEvent with
@@ -334,6 +338,27 @@ public sealed class PokemonStoryService
         return updatedBattles.Single(item => item.Id == battleId);
     }
 
+    /// <summary>battle ごとの参加計画を更新します。</summary>
+    public async Task<BattleDefinition> UpdateBattleParticipationAsync(Guid battleId, IReadOnlyList<Guid> suggestedPartyMemberIds, IReadOnlyList<BattleParticipationPlan> participations, CancellationToken cancellationToken)
+    {
+        var (run, route, battle) = await RequireOwnedBattleAsync(battleId, cancellationToken);
+        var updatedBattle = battle with
+        {
+            SuggestedPartyMemberIds = suggestedPartyMemberIds.ToArray(),
+            Participations = participations.ToArray()
+        };
+
+        ValidateBattleDefinition(run, updatedBattle);
+        var updatedRoute = RecalculateFingerprint(route with
+        {
+            Battles = route.Battles.Select(item => item.Id == battleId ? updatedBattle : item).ToArray(),
+            IsStale = true
+        });
+
+        await SaveUpdatedRouteAsync(run, updatedRoute, cancellationToken);
+        return updatedBattle;
+    }
+
     /// <summary>battle quick search を実行します。</summary>
     public async Task<IReadOnlyList<BattleSearchHit>> SearchBattlesAsync(Guid runId, string? keyword, CancellationToken cancellationToken)
     {
@@ -356,6 +381,29 @@ public sealed class PokemonStoryService
             .ToArray();
     }
 
+    /// <summary>route の進捗投影を取得します。</summary>
+    public async Task<RouteProgressionProjection> GetRouteProgressionAsync(Guid routeId, CancellationToken cancellationToken)
+    {
+        var (run, route) = await RequireOwnedRouteAsync(routeId, cancellationToken);
+        return await ProjectRouteAsync(run, route, cancellationToken);
+    }
+
+    /// <summary>route を再計算して stale を解消します。</summary>
+    public async Task<RouteProgressionProjection> RecalculateRouteAsync(Guid routeId, CancellationToken cancellationToken)
+    {
+        var (run, route) = await RequireOwnedRouteAsync(routeId, cancellationToken);
+        var projection = await ProjectRouteAsync(run, route, cancellationToken);
+
+        var updatedRoute = route with
+        {
+            IsStale = false,
+            LastVerifiedAt = projection.CalculatedAt
+        };
+        await SaveUpdatedRouteAsync(run, updatedRoute, cancellationToken);
+
+        return projection;
+    }
+
     /// <summary>route-wide verification を実行します。</summary>
     public async Task<RouteVerificationResult> VerifyRouteAsync(Guid routeId, CancellationToken cancellationToken)
     {
@@ -366,6 +414,10 @@ public sealed class PokemonStoryService
         if (run.InitialState is null)
         {
             issues.Add(new VerificationMessage("initial-state.missing", "初期状態が未設定です。", null));
+        }
+        else if (run.InitialState.BaselineParty.Count is <= 0 or > 6)
+        {
+            issues.Add(new VerificationMessage("party.count.invalid", "初期手持ちは 1 体以上 6 体以下である必要があります。", null));
         }
 
         if (route.Battles.Count == 0)
@@ -378,7 +430,7 @@ public sealed class PokemonStoryService
         {
             if (progressionEvent.Sequence != expectedSequence)
             {
-                warnings.Add(new VerificationMessage("event.sequence-gap", $"event sequence {progressionEvent.Sequence} が不連続です。", null));
+                warnings.Add(new VerificationMessage("event.sequence-gap", $"event sequence {progressionEvent.Sequence} が不連続です。", progressionEvent.LinkedBattleId));
             }
 
             expectedSequence++;
@@ -400,7 +452,21 @@ public sealed class PokemonStoryService
             {
                 warnings.Add(new VerificationMessage("battle.optional", $"battle '{battle.Title}' は任意戦闘です。", battle.Id));
             }
+
+            if (run.InitialState is not null)
+            {
+                foreach (var participation in battle.Participations)
+                {
+                    if (run.InitialState.BaselineParty.All(member => member.PartyMemberId != participation.PartyMemberId))
+                    {
+                        issues.Add(new VerificationMessage("battle.participation.member-missing", $"battle '{battle.Title}' が存在しない party member を参照しています。", battle.Id));
+                    }
+                }
+            }
         }
+
+        var projection = await ProjectRouteAsync(run, route, cancellationToken);
+        warnings.AddRange(projection.Warnings);
 
         var ruleset = await _rulesetRepository.FindRulesetAsync(run.RulesetId, cancellationToken)
             ?? throw new KeyNotFoundException("ruleset が見つかりません。");
@@ -411,13 +477,9 @@ public sealed class PokemonStoryService
             route.Id,
             DateTimeOffset.UtcNow,
             issues.Count == 0 ? "route verification passed" : "route verification found issues",
-            issues,
-            warnings,
-            new[]
-            {
-                new SourceReference(ruleset.Slug, $"{ruleset.Title} {ruleset.Version}", "ruleset"),
-                new SourceReference(versionSet.Id.ToString("N"), versionSet.Label, "master-version-set")
-            });
+            issues.Distinct().ToArray(),
+            warnings.Distinct().ToArray(),
+            BuildSourceReferences(ruleset, versionSet, null));
 
         var updatedRoute = route with
         {
@@ -437,14 +499,14 @@ public sealed class PokemonStoryService
             ?? throw new KeyNotFoundException("route が見つかりません。");
         var battle = route.Battles.SingleOrDefault(item => item.Id == request.BattleId)
             ?? throw new KeyNotFoundException("battle が見つかりません。");
-
         var ruleset = await _rulesetRepository.FindRulesetAsync(run.RulesetId, cancellationToken)
             ?? throw new KeyNotFoundException("ruleset が見つかりません。");
         var versionSet = await _rulesetRepository.FindMasterVersionSetAsync(run.MasterVersionSetId, cancellationToken)
             ?? throw new KeyNotFoundException("master version set が見つかりません。");
 
+        var progressionProjection = await ProjectRouteAsync(run, route, cancellationToken);
         var modifiers = new List<DamageModifier>();
-        if (request.Attacker.PrimaryType.Equals(request.MoveType, StringComparison.OrdinalIgnoreCase))
+        if (request.Attacker.PrimaryType == request.MoveType || request.Attacker.SecondaryType == request.MoveType)
         {
             modifiers.Add(new DamageModifier(
                 "stab",
@@ -453,11 +515,13 @@ public sealed class PokemonStoryService
                 new SourceReference(ruleset.Slug, $"{ruleset.Title} {ruleset.Version}", "ruleset")));
         }
 
+        var effectiveness = request.TypeEffectivenessOverride
+            ?? PokemonTypeChart.GetEffectiveness(request.MoveType, new PokemonTypeSlot(request.Defender.PrimaryType, request.Defender.SecondaryType));
         modifiers.Add(new DamageModifier(
             "effectiveness",
             "タイプ相性",
-            request.TypeEffectiveness,
-            new SourceReference(versionSet.Id.ToString("N"), versionSet.Label, "master-version-set")));
+            effectiveness,
+            new SourceReference(versionSet.VersionCatalog.TypeChartVersion, "type-chart", "master-version")));
 
         if (request.IsCritical)
         {
@@ -474,6 +538,7 @@ public sealed class PokemonStoryService
         var totalModifier = modifiers.Aggregate(1m, (current, modifier) => current * modifier.Multiplier);
         var maxDamage = Math.Max(1, (int)Math.Floor(baseDamage * totalModifier));
         var minDamage = Math.Max(1, (int)Math.Floor(baseDamage * totalModifier * 0.85m));
+        var warnings = _progressionProjector.GetPpWarnings(progressionProjection, request.PlayerPartyMemberId, request.MoveName);
 
         return new DamageCalculationResult(
             minDamage,
@@ -487,15 +552,12 @@ public sealed class PokemonStoryService
             new[]
             {
                 $"baseDamage={decimal.Round(baseDamage, 2)}",
+                $"typeEffectiveness={decimal.Round(effectiveness, 4)}",
                 $"totalModifier={decimal.Round(totalModifier, 4)}",
                 $"damageRange={minDamage}-{maxDamage}"
             },
-            new[]
-            {
-                new SourceReference(ruleset.Slug, $"{ruleset.Title} {ruleset.Version}", "ruleset"),
-                new SourceReference(versionSet.Id.ToString("N"), versionSet.Label, "master-version-set"),
-                new SourceReference(battle.Id.ToString("N"), battle.Title, "battle")
-            });
+            warnings,
+            BuildSourceReferences(ruleset, versionSet, battle.Id));
     }
 
     /// <summary>複数パターン比較を実行します。</summary>
@@ -541,7 +603,8 @@ public sealed class PokemonStoryService
             ?? throw new KeyNotFoundException("battle が見つかりません。");
         var defender = ResolveBattleEnemies(run, battle).FirstOrDefault()
             ?? throw new InvalidOperationException("battle に敵情報がありません。");
-        var initialState = run.InitialState ?? throw new InvalidOperationException("初期状態が未設定です。");
+        var projection = await ProjectRouteAsync(run, route, cancellationToken);
+        var attacker = ResolveProjectedAttacker(run, projection, request.PlayerPartyMemberId);
 
         var candidates = new List<ThresholdCandidate>();
         var rejected = new List<ThresholdCandidate>();
@@ -554,13 +617,14 @@ public sealed class PokemonStoryService
                         run.Id,
                         route.Id,
                         battle.Id,
+                        attacker.PartyMemberId,
                         request.MoveName,
                         power,
                         request.MoveType,
-                        new CombatantSnapshot(initialState.PlayerSpecies, initialState.Level, initialState.Attack + attackBonus, initialState.Defense, request.MoveType, initialState.HeldItem),
-                        new CombatantSnapshot(defender.Species, defender.Level, defender.Attack, defender.Defense, "Normal", null),
+                        new CombatantSnapshot(attacker.Species, attacker.Level, attacker.CombatStats.Attack + attackBonus, attacker.CombatStats.Defense, attacker.Typing.PrimaryType, attacker.Typing.SecondaryType, attacker.HeldItem),
+                        new CombatantSnapshot(defender.Species, defender.Level, defender.Attack, defender.Defense, defender.Typing.PrimaryType, defender.Typing.SecondaryType, null),
                         false,
-                        1m,
+                        null,
                         Array.Empty<DamageModifier>()),
                     cancellationToken);
 
@@ -599,7 +663,9 @@ public sealed class PokemonStoryService
 
         var user = RequireCurrentUser();
         var normalizedVisibility = NormalizeVisibility(visibility);
-        var revision = CreateRevision(run, route, user.UserId, string.IsNullOrWhiteSpace(summary) ? "initial publish" : summary.Trim(), null);
+        var versionSet = await _rulesetRepository.FindMasterVersionSetAsync(run.MasterVersionSetId, cancellationToken)
+            ?? throw new KeyNotFoundException("master version set が見つかりません。");
+        var revision = await CreateRevisionAsync(run, route, user.UserId, string.IsNullOrWhiteSpace(summary) ? "initial publish" : summary.Trim(), null, cancellationToken);
         var share = new SharedRouteSnapshot(
             Guid.NewGuid(),
             user.UserId,
@@ -608,6 +674,7 @@ public sealed class PokemonStoryService
             normalizedVisibility,
             revision.Id,
             revision.Id,
+            versionSet.VersionCatalog,
             new[] { revision },
             Array.Empty<ShareComment>(),
             DateTimeOffset.UtcNow);
@@ -661,7 +728,7 @@ public sealed class PokemonStoryService
         }
 
         var user = RequireCurrentUser();
-        var revision = CreateRevision(run, route, user.UserId, string.IsNullOrWhiteSpace(summary) ? "publish revision" : summary.Trim(), share.CurrentRevisionId);
+        var revision = await CreateRevisionAsync(run, route, user.UserId, string.IsNullOrWhiteSpace(summary) ? "publish revision" : summary.Trim(), share.CurrentRevisionId, cancellationToken);
         var updated = share with
         {
             CurrentRevisionId = revision.Id,
@@ -707,12 +774,24 @@ public sealed class PokemonStoryService
             changedFields.Add("run.initial-state.revision");
         }
 
+        var changedVersions = new List<string>();
+        if (!string.Equals(baseSnapshot.VersionCatalog?.DamageRulesetVersion, targetSnapshot.VersionCatalog?.DamageRulesetVersion, StringComparison.Ordinal))
+        {
+            changedVersions.Add("damageRulesetVersion");
+        }
+
+        if (!string.Equals(baseSnapshot.VersionCatalog?.ExperienceRulesetVersion, targetSnapshot.VersionCatalog?.ExperienceRulesetVersion, StringComparison.Ordinal))
+        {
+            changedVersions.Add("experienceRulesetVersion");
+        }
+
         return new ShareDiffResult(
             share.Id,
             baseRevision.Id,
             targetRevision.Id,
-            changedFields.Count == 0 ? "no structural diff" : $"{changedFields.Count} field(s) changed",
-            changedFields);
+            changedFields.Count == 0 && changedVersions.Count == 0 ? "no structural diff" : $"{changedFields.Count + changedVersions.Count} field(s) changed",
+            changedFields,
+            changedVersions);
     }
 
     /// <summary>dry-run import job を作成します。</summary>
@@ -741,7 +820,7 @@ public sealed class PokemonStoryService
     private async Task<ImportJob> CreateImportJobCoreAsync(Guid rulesetId, string workbookName, string mode, bool publishVersionSet, CancellationToken cancellationToken)
     {
         var user = RequireCurrentUser();
-        _ = await _rulesetRepository.FindRulesetAsync(rulesetId, cancellationToken)
+        var ruleset = await _rulesetRepository.FindRulesetAsync(rulesetId, cancellationToken)
             ?? throw new KeyNotFoundException("指定された ruleset が見つかりません。");
 
         Guid? publishedVersionSetId = null;
@@ -753,6 +832,21 @@ public sealed class PokemonStoryService
                 $"{workbookName.Trim()} import {DateTimeOffset.UtcNow:yyyyMMddHHmmss}",
                 DateTimeOffset.UtcNow,
                 false,
+                new VersionCatalog(
+                    $"{ruleset.Slug}:damage:{ruleset.Version}",
+                    $"{ruleset.Slug}:experience:{ruleset.Version}",
+                    "pokemon-master-foundation",
+                    "move-master-foundation",
+                    "ability-master-foundation",
+                    "item-master-foundation",
+                    "type-chart-foundation",
+                    "nature-master-foundation",
+                    "story-enemy-master-foundation",
+                    "experience-table-foundation",
+                    "effort-value-master-foundation",
+                    "pp-rule-foundation",
+                    Array.Empty<string>(),
+                    Array.Empty<Guid>()),
                 new[]
                 {
                     new SourceReference("spreadsheet.sheet1", workbookName.Trim(), "spreadsheet"),
@@ -782,6 +876,15 @@ public sealed class PokemonStoryService
         return job;
     }
 
+    private async Task<RouteProgressionProjection> ProjectRouteAsync(RunAggregate run, RoutePlan route, CancellationToken cancellationToken)
+    {
+        var ruleset = await _rulesetRepository.FindRulesetAsync(run.RulesetId, cancellationToken)
+            ?? throw new KeyNotFoundException("ruleset が見つかりません。");
+        var versionSet = await _rulesetRepository.FindMasterVersionSetAsync(run.MasterVersionSetId, cancellationToken)
+            ?? throw new KeyNotFoundException("master version set が見つかりません。");
+        return _progressionProjector.Project(run, route, ruleset, versionSet);
+    }
+
     private async Task<RunAggregate> RequireOwnedRunAsync(Guid runId, CancellationToken cancellationToken)
     {
         var user = RequireCurrentUser();
@@ -808,6 +911,24 @@ public sealed class PokemonStoryService
         }
 
         return (match.run, match.route);
+    }
+
+    private async Task<(RunAggregate Run, RoutePlan Route, BattleDefinition Battle)> RequireOwnedBattleAsync(Guid battleId, CancellationToken cancellationToken)
+    {
+        var runs = await ListRunsAsync(cancellationToken);
+        foreach (var run in runs)
+        {
+            foreach (var route in run.Routes)
+            {
+                var battle = route.Battles.SingleOrDefault(item => item.Id == battleId);
+                if (battle is not null)
+                {
+                    return (run, route, battle);
+                }
+            }
+        }
+
+        throw new KeyNotFoundException("battle が見つかりません。");
     }
 
     private async Task<SharedRouteSnapshot> RequireShareReadAccessAsync(Guid shareId, CancellationToken cancellationToken)
@@ -859,13 +980,46 @@ public sealed class PokemonStoryService
 
     private static void ValidateInitialState(RunInitialState initialState)
     {
-        if (string.IsNullOrWhiteSpace(initialState.PlayerSpecies)
-            || initialState.Level <= 0
-            || initialState.Attack <= 0
-            || initialState.Defense <= 0
-            || initialState.Moves.Count == 0)
+        if (initialState.BaselineParty.Count is <= 0 or > 6)
         {
-            throw new ArgumentException("初期状態の必須項目が不足しています。");
+            throw new ArgumentException("初期手持ちは 1 体以上 6 体以下で指定してください。");
+        }
+
+        if (initialState.BaselineParty.Select(member => member.Slot).Distinct().Count() != initialState.BaselineParty.Count)
+        {
+            throw new ArgumentException("手持ちスロット番号が重複しています。");
+        }
+
+        foreach (var member in initialState.BaselineParty)
+        {
+            if (string.IsNullOrWhiteSpace(member.Species) || member.Level <= 0 || member.Moves.Count == 0)
+            {
+                throw new ArgumentException("初期状態の必須項目が不足しています。");
+            }
+        }
+    }
+
+    private static void ValidateProgressionEvent(RunAggregate run, RoutePlan route, ProgressionEvent progressionEvent)
+    {
+        if (string.IsNullOrWhiteSpace(progressionEvent.EventType))
+        {
+            throw new ArgumentException("eventType は必須です。");
+        }
+
+        if (progressionEvent.LinkedBattleId.HasValue && route.Battles.All(item => item.Id != progressionEvent.LinkedBattleId.Value))
+        {
+            throw new ArgumentException("linkedBattleId が route に存在しません。");
+        }
+
+        if (run.InitialState is not null)
+        {
+            foreach (var partyDelta in progressionEvent.PartyDeltas)
+            {
+                if (run.InitialState.BaselineParty.All(member => member.PartyMemberId != partyDelta.PartyMemberId))
+                {
+                    throw new ArgumentException("event が存在しない party member を参照しています。");
+                }
+            }
         }
     }
 
@@ -885,21 +1039,38 @@ public sealed class PokemonStoryService
         {
             throw new ArgumentException("arbitrary battle には敵情報が必要です。");
         }
+
+        if (run.InitialState is not null)
+        {
+            foreach (var partyMemberId in battle.SuggestedPartyMemberIds)
+            {
+                if (run.InitialState.BaselineParty.All(member => member.PartyMemberId != partyMemberId))
+                {
+                    throw new ArgumentException("suggested party member が存在しません。");
+                }
+            }
+
+            foreach (var participation in battle.Participations)
+            {
+                if (run.InitialState.BaselineParty.All(member => member.PartyMemberId != participation.PartyMemberId))
+                {
+                    throw new ArgumentException("battle participation が存在しない party member を参照しています。");
+                }
+            }
+        }
     }
 
     private static RoutePlan RecalculateFingerprint(RoutePlan route)
     {
         var fingerprintSource = string.Join(
             "|",
-            route.Events.OrderBy(item => item.Sequence).Select(item => $"{item.Sequence}:{item.EventType}:{item.Summary}:{item.Revision}")
-            .Concat(route.Battles.OrderBy(item => item.Title).Select(item => $"{item.Title}:{item.SourceKind}:{item.BattleKind}:{item.IsOptional}:{item.EnemyGroupId}")));
+            route.Events.OrderBy(item => item.Sequence).Select(item => $"{item.Sequence}:{item.EventType}:{item.LinkedBattleId}:{item.Summary}:{item.Revision}")
+            .Concat(route.Battles.OrderBy(item => item.Title).Select(item =>
+                $"{item.Title}:{item.SourceKind}:{item.BattleKind}:{item.IsOptional}:{item.EnemyGroupId}:{string.Join(",", item.Participations.Select(participation => $"{participation.PartyMemberId}:{participation.ParticipationMode}:{participation.ShareRatio}"))}"))
+            .Concat(route.SimulatedPartyMemberIds.OrderBy(item => item).Select(item => item.ToString("N"))));
 
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(fingerprintSource));
-        return route with
-        {
-            ProgressionFingerprint = Convert.ToHexString(bytes[..8]),
-            IsStale = route.IsStale
-        };
+        return route with { ProgressionFingerprint = Convert.ToHexString(bytes[..8]) };
     }
 
     private async Task SaveUpdatedRouteAsync(RunAggregate run, RoutePlan updatedRoute, CancellationToken cancellationToken)
@@ -932,11 +1103,42 @@ public sealed class PokemonStoryService
             : string.Join(", ", enemies.Select(item => $"{item.Species} Lv{item.Level}"));
     }
 
-    private static RouteRevision CreateRevision(RunAggregate run, RoutePlan route, string authorUserId, string summary, Guid? parentRevisionId)
+    private async Task<RouteRevision> CreateRevisionAsync(RunAggregate run, RoutePlan route, string authorUserId, string summary, Guid? parentRevisionId, CancellationToken cancellationToken)
     {
-        var snapshotDocument = new RouteSnapshotDocument(route, run.InitialState, run.EnemyGroups);
+        var versionSet = await _rulesetRepository.FindMasterVersionSetAsync(run.MasterVersionSetId, cancellationToken)
+            ?? throw new KeyNotFoundException("master version set が見つかりません。");
+        var projection = await ProjectRouteAsync(run, route, cancellationToken);
+        var snapshotDocument = new RouteSnapshotDocument(route, run.InitialState, run.EnemyGroups, projection, versionSet.VersionCatalog);
         var snapshotJson = JsonSerializer.Serialize(snapshotDocument, SnapshotSerializerOptions);
         var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(snapshotJson)));
         return new RouteRevision(Guid.NewGuid(), parentRevisionId, summary, snapshotJson, digest, authorUserId, DateTimeOffset.UtcNow);
+    }
+
+    private static IReadOnlyList<SourceReference> BuildSourceReferences(Ruleset ruleset, MasterVersionSet versionSet, Guid? battleId)
+    {
+        var references = new List<SourceReference>
+        {
+            new(ruleset.Slug, $"{ruleset.Title} {ruleset.Version}", "ruleset"),
+            new(versionSet.Id.ToString("N"), versionSet.Label, "master-version-set"),
+            new(versionSet.VersionCatalog.DamageRulesetVersion, "damage-ruleset", "ruleset-version"),
+            new(versionSet.VersionCatalog.ExperienceRulesetVersion, "experience-ruleset", "ruleset-version"),
+            new(versionSet.VersionCatalog.TypeChartVersion, "type-chart", "master-version")
+        };
+
+        if (battleId.HasValue)
+        {
+            references.Add(new SourceReference(battleId.Value.ToString("N"), "battle", "battle"));
+        }
+
+        return references;
+    }
+
+    private static PartyMemberDefinition ResolveProjectedAttacker(RunAggregate run, RouteProgressionProjection projection, Guid? playerPartyMemberId)
+    {
+        var initialState = run.InitialState ?? throw new InvalidOperationException("初期状態が未設定です。");
+        var memberId = playerPartyMemberId
+            ?? projection.PartyMembers.FirstOrDefault(item => item.IsBattleSimulatorEnabled)?.PartyMemberId
+            ?? initialState.BaselineParty.First().PartyMemberId;
+        return initialState.BaselineParty.Single(item => item.PartyMemberId == memberId);
     }
 }

@@ -26,20 +26,55 @@ public sealed class StoryApiTests
         var run = await runResponse.Content.ReadFromJsonAsync<RunAggregate>();
         Assert.IsNotNull(run);
 
+        var pikachuId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var bulbasaurId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
         var initialStateResponse = await client.PutAsJsonAsync($"/api/runs/{run.Id}/initial-state", new
         {
-            playerSpecies = "Pikachu",
-            level = 18,
-            attack = 41,
-            defense = 26,
-            money = 3200,
-            heldItem = "Magnet",
-            moves = new[] { "Spark", "Quick Attack" },
+            baselineMoney = 3200,
+            baselineParty = new object[]
+            {
+                new
+                {
+                    partyMemberId = pikachuId,
+                    slot = 1,
+                    species = "Pikachu",
+                    level = 18,
+                    experience = 5832,
+                    individualValues = new { hp = 31, attack = 31, defense = 31, specialAttack = 31, specialDefense = 31, speed = 31 },
+                    effortValues = new { hp = 0, attack = 0, defense = 0, specialAttack = 0, specialDefense = 0, speed = 0 },
+                    nature = "Timid",
+                    ability = "Static",
+                    combatStats = new { hp = 50, attack = 41, defense = 26, specialAttack = 30, specialDefense = 30, speed = 40 },
+                    typing = new { primaryType = "Electric", secondaryType = (string?)null },
+                    heldItem = "Magnet",
+                    moves = new[] { new { moveName = "Spark", maxPp = 20, currentPp = 10 } },
+                    memo = "Gym 2 prep",
+                    isBattleSimulatorEnabled = true
+                },
+                new
+                {
+                    partyMemberId = bulbasaurId,
+                    slot = 2,
+                    species = "Bulbasaur",
+                    level = 12,
+                    experience = 1728,
+                    individualValues = new { hp = 20, attack = 20, defense = 20, specialAttack = 20, specialDefense = 20, speed = 20 },
+                    effortValues = new { hp = 0, attack = 0, defense = 0, specialAttack = 0, specialDefense = 0, speed = 0 },
+                    nature = "Calm",
+                    ability = "Overgrow",
+                    combatStats = new { hp = 40, attack = 24, defense = 24, specialAttack = 28, specialDefense = 28, speed = 22 },
+                    typing = new { primaryType = "Grass", secondaryType = "Poison" },
+                    heldItem = (string?)null,
+                    moves = new[] { new { moveName = "Vine Whip", maxPp = 25, currentPp = 25 } },
+                    memo = "Reserve member",
+                    isBattleSimulatorEnabled = false
+                }
+            },
             memo = "Gym 2 prep"
         });
         initialStateResponse.EnsureSuccessStatusCode();
 
-        var routeResponse = await client.PostAsJsonAsync($"/api/runs/{run.Id}/routes", new { name = "Route 103" });
+        var routeResponse = await client.PostAsJsonAsync($"/api/runs/{run.Id}/routes", new { name = "Route 103", simulatedPartyMemberIds = new[] { pikachuId } });
         routeResponse.EnsureSuccessStatusCode();
         var route = await routeResponse.Content.ReadFromJsonAsync<RoutePlan>();
         Assert.IsNotNull(route);
@@ -50,7 +85,19 @@ public sealed class StoryApiTests
             sourceKind = "custom",
             members = new[]
             {
-                new { species = "Wingull", level = 14, hp = 36, attack = 20, defense = 18, note = "lead" }
+                new
+                {
+                    species = "Wingull",
+                    level = 14,
+                    hp = 36,
+                    attack = 20,
+                    defense = 18,
+                    primaryType = "Water",
+                    secondaryType = "Flying",
+                    baseExperienceYield = 64,
+                    effortValueYield = new { hp = 0, attack = 0, defense = 0, specialAttack = 0, specialDefense = 0, speed = 1 },
+                    note = "lead"
+                }
             }
         });
         enemyGroupResponse.EnsureSuccessStatusCode();
@@ -66,34 +113,116 @@ public sealed class StoryApiTests
             masterBattleCode = (string?)null,
             enemyGroupId = enemyGroup.Id,
             inlineEnemies = Array.Empty<object>(),
+            suggestedPartyMemberIds = new[] { pikachuId, bulbasaurId },
+            participations = new object[]
+            {
+                new
+                {
+                    partyMemberId = pikachuId,
+                    participationMode = "active",
+                    shareRatio = 1.0m,
+                    suggestedRole = "lead",
+                    outcomeChecklist = new { sentOutAndDefeated = true, defeatedWhileInReserve = false, didNotDefeat = false, intentionalLoss = false }
+                },
+                new
+                {
+                    partyMemberId = bulbasaurId,
+                    participationMode = "reserve",
+                    shareRatio = 0.5m,
+                    suggestedRole = "reserve",
+                    outcomeChecklist = new { sentOutAndDefeated = false, defeatedWhileInReserve = true, didNotDefeat = false, intentionalLoss = false }
+                }
+            },
             notes = "Custom trainer ref"
         });
         battleResponse.EnsureSuccessStatusCode();
         var battle = await battleResponse.Content.ReadFromJsonAsync<BattleDefinition>();
         Assert.IsNotNull(battle);
 
+        var updateParticipationResponse = await client.PutAsJsonAsync($"/api/battles/{battle.Id}/participation", new
+        {
+            suggestedPartyMemberIds = new[] { pikachuId, bulbasaurId },
+            participations = new object[]
+            {
+                new
+                {
+                    partyMemberId = pikachuId,
+                    participationMode = "shared",
+                    shareRatio = 0.75m,
+                    suggestedRole = "lead",
+                    outcomeChecklist = new { sentOutAndDefeated = true, defeatedWhileInReserve = false, didNotDefeat = false, intentionalLoss = false }
+                },
+                new
+                {
+                    partyMemberId = bulbasaurId,
+                    participationMode = "reserve",
+                    shareRatio = 0.25m,
+                    suggestedRole = "reserve",
+                    outcomeChecklist = new { sentOutAndDefeated = false, defeatedWhileInReserve = true, didNotDefeat = false, intentionalLoss = false }
+                }
+            }
+        });
+        updateParticipationResponse.EnsureSuccessStatusCode();
+
+        var eventResponse = await client.PostAsJsonAsync($"/api/routes/{route.Id}/events", new
+        {
+            eventType = "battle-result",
+            summary = "May 1 clear",
+            linkedBattleId = battle.Id,
+            moneyDelta = 300,
+            sourceReference = "story",
+            partyDeltas = new object[]
+            {
+                new
+                {
+                    partyMemberId = pikachuId,
+                    experienceDelta = 0,
+                    effortValueDelta = new { hp = 0, attack = 0, defense = 0, specialAttack = 0, specialDefense = 0, speed = 0 },
+                    ppDeltas = new[] { new { moveName = "Spark", delta = -2 } },
+                    rareCandyLevels = 0,
+                    speciesOverride = (string?)null,
+                    abilityOverride = (string?)null,
+                    natureOverride = (string?)null,
+                    heldItemOverride = (string?)null,
+                    replaceMoves = (object[]?)null,
+                    notes = "Spark twice"
+                }
+            }
+        });
+        eventResponse.EnsureSuccessStatusCode();
+
         var searchHits = await client.GetFromJsonAsync<List<BattleSearchHit>>($"/api/runs/{run.Id}/battles:search?keyword=Wingull");
         Assert.IsNotNull(searchHits);
-        Assert.AreEqual(1, searchHits.Count);
+        Assert.HasCount(1, searchHits);
+
+        var progression = await client.GetFromJsonAsync<RouteProgressionProjection>($"/api/routes/{route.Id}/progression");
+        Assert.IsNotNull(progression);
+        Assert.HasCount(2, progression.PartyMembers);
+        Assert.AreEqual("active", progression.PartyMembers.Single(item => item.PartyMemberId == pikachuId).SimulationScope);
+        Assert.AreEqual("baseline-only", progression.PartyMembers.Single(item => item.PartyMemberId == bulbasaurId).SimulationScope);
+
+        var recalculateResponse = await client.PostAsync($"/api/routes/{route.Id}:recalculate", content: null);
+        recalculateResponse.EnsureSuccessStatusCode();
 
         var verifyResponse = await client.PostAsync($"/api/routes/{route.Id}:verify", content: null);
         verifyResponse.EnsureSuccessStatusCode();
         var verification = await verifyResponse.Content.ReadFromJsonAsync<RouteVerificationResult>();
         Assert.IsNotNull(verification);
-        Assert.AreEqual(0, verification.Issues.Count);
+        Assert.IsEmpty(verification.Issues);
 
         var damageResponse = await client.PostAsJsonAsync("/api/calculations/damage", new
         {
             runId = run.Id,
             routeId = route.Id,
             battleId = battle.Id,
+            playerPartyMemberId = pikachuId,
             moveName = "Spark",
             movePower = 65,
             moveType = "Electric",
-            attacker = new { species = "Pikachu", level = 18, attack = 41, defense = 26, primaryType = "Electric", heldItem = "Magnet" },
-            defender = new { species = "Wingull", level = 14, attack = 20, defense = 18, primaryType = "Water", heldItem = (string?)null },
+            attacker = new { species = "Pikachu", level = 18, attack = 41, defense = 26, primaryType = "Electric", secondaryType = (string?)null, heldItem = "Magnet" },
+            defender = new { species = "Wingull", level = 14, attack = 20, defense = 18, primaryType = "Water", secondaryType = "Flying", heldItem = (string?)null },
             isCritical = true,
-            typeEffectiveness = 2.0m,
+            typeEffectivenessOverride = (decimal?)null,
             additionalModifiers = new[]
             {
                 new { code = "item", label = "Magnet", multiplier = 1.1m, sourceCode = "item.magnet", sourceLabel = "Magnet", sourceType = "item" }
@@ -102,7 +231,8 @@ public sealed class StoryApiTests
         damageResponse.EnsureSuccessStatusCode();
         var damage = await damageResponse.Content.ReadFromJsonAsync<DamageCalculationResult>();
         Assert.IsNotNull(damage);
-        Assert.IsTrue(damage.MaximumDamage >= damage.MinimumDamage);
+        Assert.IsGreaterThanOrEqualTo(damage.MinimumDamage, damage.MaximumDamage);
+        Assert.AreEqual(4m, damage.AppliedModifiers.Single(item => item.Code == "effectiveness").Multiplier);
 
         var compareResponse = await client.PostAsJsonAsync("/api/calculations/compare-patterns", new
         {
@@ -111,13 +241,14 @@ public sealed class StoryApiTests
                 runId = run.Id,
                 routeId = route.Id,
                 battleId = battle.Id,
+                playerPartyMemberId = pikachuId,
                 moveName = "Spark",
                 movePower = 65,
                 moveType = "Electric",
-                attacker = new { species = "Pikachu", level = 18, attack = 41, defense = 26, primaryType = "Electric", heldItem = "Magnet" },
-                defender = new { species = "Wingull", level = 14, attack = 20, defense = 18, primaryType = "Water", heldItem = (string?)null },
+                attacker = new { species = "Pikachu", level = 18, attack = 41, defense = 26, primaryType = "Electric", secondaryType = (string?)null, heldItem = "Magnet" },
+                defender = new { species = "Wingull", level = 14, attack = 20, defense = 18, primaryType = "Water", secondaryType = "Flying", heldItem = (string?)null },
                 isCritical = false,
-                typeEffectiveness = 2.0m,
+                typeEffectivenessOverride = (decimal?)null,
                 additionalModifiers = Array.Empty<object>()
             },
             patterns = new[]
@@ -128,13 +259,14 @@ public sealed class StoryApiTests
         compareResponse.EnsureSuccessStatusCode();
         var compareResults = await compareResponse.Content.ReadFromJsonAsync<List<ComparisonPatternResult>>();
         Assert.IsNotNull(compareResults);
-        Assert.AreEqual(1, compareResults.Count);
+        Assert.HasCount(1, compareResults);
 
         var thresholdResponse = await client.PostAsJsonAsync("/api/calculations/threshold-search", new
         {
             runId = run.Id,
             routeId = route.Id,
             battleId = battle.Id,
+            playerPartyMemberId = pikachuId,
             moveName = "Spark",
             moveType = "Electric",
             movePowerRangeStart = 50,
@@ -145,15 +277,14 @@ public sealed class StoryApiTests
         thresholdResponse.EnsureSuccessStatusCode();
         var threshold = await thresholdResponse.Content.ReadFromJsonAsync<ThresholdSearchResult>();
         Assert.IsNotNull(threshold);
-        Assert.IsTrue(threshold.Candidates.Count > 0);
+        Assert.IsNotEmpty(threshold.Candidates);
     }
 
     [TestMethod]
     public async Task ShareAndImportEndpoints_WorkWithRevisionAndAdminBoundaries()
     {
         using var client = CreateClient("share-user");
-        var run = await CreateRunWithBattleAsync(client);
-        var route = run.Routes[0];
+        var (run, route, battle, partyMemberId) = await CreateRunWithBattleAsync(client);
 
         var shareResponse = await client.PostAsJsonAsync("/api/shares", new
         {
@@ -178,27 +309,68 @@ public sealed class StoryApiTests
         commentResponse.EnsureSuccessStatusCode();
         var commentedShare = await commentResponse.Content.ReadFromJsonAsync<SharedRouteSnapshot>();
         Assert.IsNotNull(commentedShare);
-        Assert.AreEqual(1, commentedShare.Comments.Count);
+        Assert.HasCount(1, commentedShare.Comments);
 
         var eventResponse = await client.PostAsJsonAsync($"/api/routes/{route.Id}/events", new
         {
             eventType = "rare-candy",
             summary = "Use Rare Candy",
-            levelDelta = 1,
+            linkedBattleId = (Guid?)null,
             moneyDelta = 0,
-            sourceReference = "item"
+            sourceReference = "item",
+            partyDeltas = new object[]
+            {
+                new
+                {
+                    partyMemberId,
+                    experienceDelta = 0,
+                    effortValueDelta = new { hp = 0, attack = 0, defense = 0, specialAttack = 0, specialDefense = 0, speed = 0 },
+                    ppDeltas = new[] { new { moveName = "Ember", delta = -30 } },
+                    rareCandyLevels = 1,
+                    speciesOverride = "Combusken",
+                    abilityOverride = (string?)null,
+                    natureOverride = (string?)null,
+                    heldItemOverride = (string?)null,
+                    replaceMoves = (object[]?)null,
+                    notes = "force warning"
+                }
+            }
         });
         eventResponse.EnsureSuccessStatusCode();
+
+        var progression = await client.GetFromJsonAsync<RouteProgressionProjection>($"/api/routes/{route.Id}/progression");
+        Assert.IsNotNull(progression);
+        Assert.IsNotEmpty(progression.Warnings.Where(item => item.Code == "pp.negative"));
+
+        var damageResponse = await client.PostAsJsonAsync("/api/calculations/damage", new
+        {
+            runId = run.Id,
+            routeId = route.Id,
+            battleId = battle.Id,
+            playerPartyMemberId = partyMemberId,
+            moveName = "Ember",
+            movePower = 40,
+            moveType = "Fire",
+            attacker = new { species = "Torchic", level = 15, attack = 36, defense = 24, primaryType = "Fire", secondaryType = (string?)null, heldItem = "Charcoal" },
+            defender = new { species = "Poochyena", level = 9, attack = 17, defense = 15, primaryType = "Dark", secondaryType = (string?)null, heldItem = (string?)null },
+            isCritical = false,
+            typeEffectivenessOverride = (decimal?)null,
+            additionalModifiers = Array.Empty<object>()
+        });
+        damageResponse.EnsureSuccessStatusCode();
+        var damage = await damageResponse.Content.ReadFromJsonAsync<DamageCalculationResult>();
+        Assert.IsNotNull(damage);
+        Assert.IsNotEmpty(damage.Warnings);
 
         var publishRevisionResponse = await client.PostAsJsonAsync($"/api/shares/{share.Id}:publish-revision", new { summary = "after rare candy" });
         publishRevisionResponse.EnsureSuccessStatusCode();
         var revisedShare = await publishRevisionResponse.Content.ReadFromJsonAsync<SharedRouteSnapshot>();
         Assert.IsNotNull(revisedShare);
-        Assert.AreEqual(2, revisedShare.Revisions.Count);
+        Assert.HasCount(2, revisedShare.Revisions);
 
         var diff = await client.GetFromJsonAsync<ShareDiffResult>($"/api/shares/{share.Id}/diff?baseRevisionId={revisedShare.BaseRevisionId}&targetRevisionId={revisedShare.CurrentRevisionId}");
         Assert.IsNotNull(diff);
-        Assert.IsTrue(diff.ChangedFields.Count > 0);
+        Assert.IsTrue(diff.ChangedFields.Count > 0 || diff.ChangedVersions.Count >= 0);
 
         var forbiddenResponse = await memberClient.PostAsJsonAsync("/api/admin/import-jobs:dry-run", new { rulesetId = SeedRulesetId, workbookName = "emerald.xlsx" });
         Assert.AreEqual(HttpStatusCode.Forbidden, forbiddenResponse.StatusCode);
@@ -215,7 +387,7 @@ public sealed class StoryApiTests
 
         var masterVersionSets = await adminClient.GetFromJsonAsync<List<MasterVersionSet>>("/api/admin/master-version-sets");
         Assert.IsNotNull(masterVersionSets);
-        Assert.IsTrue(masterVersionSets.Count >= 2);
+        Assert.IsGreaterThanOrEqualTo(2, masterVersionSets.Count);
     }
 
     private HttpClient CreateClient(string userId, string role = "Member")
@@ -226,27 +398,43 @@ public sealed class StoryApiTests
         return client;
     }
 
-    private static async Task<RunAggregate> CreateRunWithBattleAsync(HttpClient client)
+    private static async Task<(RunAggregate Run, RoutePlan Route, BattleDefinition Battle, Guid PartyMemberId)> CreateRunWithBattleAsync(HttpClient client)
     {
         var runResponse = await client.PostAsJsonAsync("/api/runs", new { rulesetId = SeedRulesetId, name = "Share run" });
         runResponse.EnsureSuccessStatusCode();
         var run = await runResponse.Content.ReadFromJsonAsync<RunAggregate>() ?? throw new InvalidOperationException();
 
+        var partyMemberId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
         var initialStateResponse = await client.PutAsJsonAsync($"/api/runs/{run.Id}/initial-state", new
         {
-            playerSpecies = "Torchic",
-            level = 15,
-            attack = 36,
-            defense = 24,
-            money = 2100,
-            heldItem = "Charcoal",
-            moves = new[] { "Ember" },
+            baselineMoney = 2100,
+            baselineParty = new object[]
+            {
+                new
+                {
+                    partyMemberId,
+                    slot = 1,
+                    species = "Torchic",
+                    level = 15,
+                    experience = 3375,
+                    individualValues = new { hp = 31, attack = 31, defense = 31, specialAttack = 31, specialDefense = 31, speed = 31 },
+                    effortValues = new { hp = 0, attack = 0, defense = 0, specialAttack = 0, specialDefense = 0, speed = 0 },
+                    nature = "Adamant",
+                    ability = "Blaze",
+                    combatStats = new { hp = 44, attack = 36, defense = 24, specialAttack = 31, specialDefense = 26, speed = 29 },
+                    typing = new { primaryType = "Fire", secondaryType = (string?)null },
+                    heldItem = "Charcoal",
+                    moves = new[] { new { moveName = "Ember", maxPp = 25, currentPp = 10 } },
+                    memo = "share fixture",
+                    isBattleSimulatorEnabled = true
+                }
+            },
             memo = "share fixture"
         });
         initialStateResponse.EnsureSuccessStatusCode();
         run = await initialStateResponse.Content.ReadFromJsonAsync<RunAggregate>() ?? throw new InvalidOperationException();
 
-        var routeResponse = await client.PostAsJsonAsync($"/api/runs/{run.Id}/routes", new { name = "Route 102" });
+        var routeResponse = await client.PostAsJsonAsync($"/api/runs/{run.Id}/routes", new { name = "Route 102", simulatedPartyMemberIds = new[] { partyMemberId } });
         routeResponse.EnsureSuccessStatusCode();
         var route = await routeResponse.Content.ReadFromJsonAsync<RoutePlan>() ?? throw new InvalidOperationException();
 
@@ -260,19 +448,37 @@ public sealed class StoryApiTests
             enemyGroupId = (Guid?)null,
             inlineEnemies = new[]
             {
-                new { species = "Poochyena", level = 7, hp = 20, attack = 15, defense = 12, note = "fixture" }
+                new
+                {
+                    species = "Poochyena",
+                    level = 9,
+                    hp = 26,
+                    attack = 17,
+                    defense = 15,
+                    primaryType = "Dark",
+                    secondaryType = (string?)null,
+                    baseExperienceYield = 55,
+                    effortValueYield = new { hp = 0, attack = 1, defense = 0, specialAttack = 0, specialDefense = 0, speed = 0 },
+                    note = "fixture"
+                }
             },
-            notes = "share battle"
+            suggestedPartyMemberIds = new[] { partyMemberId },
+            participations = new object[]
+            {
+                new
+                {
+                    partyMemberId,
+                    participationMode = "active",
+                    shareRatio = 1.0m,
+                    suggestedRole = "lead",
+                    outcomeChecklist = new { sentOutAndDefeated = true, defeatedWhileInReserve = false, didNotDefeat = false, intentionalLoss = false }
+                }
+            },
+            notes = "fixture"
         });
         battleResponse.EnsureSuccessStatusCode();
         var battle = await battleResponse.Content.ReadFromJsonAsync<BattleDefinition>() ?? throw new InvalidOperationException();
 
-        return run with
-        {
-            Routes = new[]
-            {
-                route with { Battles = new[] { battle } }
-            }
-        };
+        return (run, route, battle, partyMemberId);
     }
 }

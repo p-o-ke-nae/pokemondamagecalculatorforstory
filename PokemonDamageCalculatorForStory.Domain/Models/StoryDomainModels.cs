@@ -19,12 +19,13 @@ public sealed record Ruleset(
     string Status,
     string Summary);
 
-/// <summary>計算再現性を担保する master version set を表します。</summary>
+/// <summary>再現性のために凍結したバージョン集合を表します。</summary>
 /// <param name="Id">version set 識別子です。</param>
 /// <param name="RulesetId">対応するルールセット識別子です。</param>
 /// <param name="Label">表示名です。</param>
 /// <param name="ImportedAt">取り込み日時です。</param>
 /// <param name="IsPublished">公開済みかどうかです。</param>
+/// <param name="VersionCatalog">固定したルール・マスタ版情報です。</param>
 /// <param name="MasterSources">参照した master source 一覧です。</param>
 public sealed record MasterVersionSet(
     Guid Id,
@@ -32,7 +33,39 @@ public sealed record MasterVersionSet(
     string Label,
     DateTimeOffset ImportedAt,
     bool IsPublished,
+    VersionCatalog VersionCatalog,
     IReadOnlyList<SourceReference> MasterSources);
+
+/// <summary>計算に使用した各ルール・マスタの版情報を表します。</summary>
+/// <param name="DamageRulesetVersion">ダメージ計算ルール版です。</param>
+/// <param name="ExperienceRulesetVersion">経験値・進捗計算ルール版です。</param>
+/// <param name="PokemonMasterVersion">ポケモンマスタ版です。</param>
+/// <param name="MoveMasterVersion">技マスタ版です。</param>
+/// <param name="AbilityMasterVersion">特性マスタ版です。</param>
+/// <param name="ItemMasterVersion">アイテムマスタ版です。</param>
+/// <param name="TypeChartVersion">タイプ相性表版です。</param>
+/// <param name="NatureMasterVersion">性格マスタ版です。</param>
+/// <param name="StoryEnemyMasterVersion">敵マスタ版です。</param>
+/// <param name="ExperienceTableVersion">経験値テーブル版です。</param>
+/// <param name="EffortValueMasterVersion">努力値マスタ版です。</param>
+/// <param name="PpRuleVersion">PP ルール版です。</param>
+/// <param name="AdditionalVersionKeys">追加の版キー一覧です。</param>
+/// <param name="ImportJobIds">関連 import job 識別子一覧です。</param>
+public sealed record VersionCatalog(
+    string DamageRulesetVersion,
+    string ExperienceRulesetVersion,
+    string PokemonMasterVersion,
+    string MoveMasterVersion,
+    string AbilityMasterVersion,
+    string ItemMasterVersion,
+    string TypeChartVersion,
+    string NatureMasterVersion,
+    string StoryEnemyMasterVersion,
+    string ExperienceTableVersion,
+    string EffortValueMasterVersion,
+    string PpRuleVersion,
+    IReadOnlyList<string> AdditionalVersionKeys,
+    IReadOnlyList<Guid> ImportJobIds);
 
 /// <summary>ユーザーが管理する攻略 run 全体を表します。</summary>
 /// <param name="Id">run 識別子です。</param>
@@ -61,24 +94,93 @@ public sealed record RunAggregate(
 
 /// <summary>run の初期状態を表します。</summary>
 /// <param name="Revision">改訂番号です。</param>
-/// <param name="PlayerSpecies">自ポケモン種族名です。</param>
-/// <param name="Level">レベルです。</param>
-/// <param name="Attack">攻撃実数値です。</param>
-/// <param name="Defense">防御実数値です。</param>
-/// <param name="Money">所持金です。</param>
-/// <param name="HeldItem">所持アイテムです。</param>
-/// <param name="Moves">覚えている技です。</param>
+/// <param name="BaselineMoney">初期所持金です。</param>
+/// <param name="BaselineParty">初期手持ち一覧です。</param>
 /// <param name="Memo">任意メモです。</param>
 public sealed record RunInitialState(
     int Revision,
-    string PlayerSpecies,
+    int BaselineMoney,
+    IReadOnlyList<PartyMemberDefinition> BaselineParty,
+    string? Memo);
+
+/// <summary>初期手持ちまたは再計算の基点となるポケモン状態を表します。</summary>
+/// <param name="PartyMemberId">手持ちメンバー識別子です。</param>
+/// <param name="Slot">手持ちスロット番号です。</param>
+/// <param name="Species">種族名です。</param>
+/// <param name="Level">初期レベルです。</param>
+/// <param name="Experience">初期経験値です。</param>
+/// <param name="IndividualValues">個体値です。</param>
+/// <param name="EffortValues">努力値です。</param>
+/// <param name="Nature">性格です。</param>
+/// <param name="Ability">特性です。</param>
+/// <param name="CombatStats">戦闘に使う実数値です。</param>
+/// <param name="Typing">タイプ情報です。</param>
+/// <param name="HeldItem">所持アイテムです。</param>
+/// <param name="Moves">技と PP 状態です。</param>
+/// <param name="Memo">任意メモです。</param>
+/// <param name="IsBattleSimulatorEnabled">主対象として計算するかどうかです。</param>
+public sealed record PartyMemberDefinition(
+    Guid PartyMemberId,
+    int Slot,
+    string Species,
     int Level,
+    int Experience,
+    StatValues IndividualValues,
+    StatValues EffortValues,
+    string Nature,
+    string Ability,
+    CombatStatSnapshot CombatStats,
+    PokemonTypeSlot Typing,
+    string? HeldItem,
+    IReadOnlyList<MoveState> Moves,
+    string? Memo,
+    bool IsBattleSimulatorEnabled);
+
+/// <summary>整数値の能力セットを表します。</summary>
+/// <param name="Hp">HP です。</param>
+/// <param name="Attack">攻撃です。</param>
+/// <param name="Defense">防御です。</param>
+/// <param name="SpecialAttack">特攻です。</param>
+/// <param name="SpecialDefense">特防です。</param>
+/// <param name="Speed">素早さです。</param>
+public sealed record StatValues(
+    int Hp,
     int Attack,
     int Defense,
-    int Money,
-    string? HeldItem,
-    IReadOnlyList<string> Moves,
-    string? Memo);
+    int SpecialAttack,
+    int SpecialDefense,
+    int Speed);
+
+/// <summary>戦闘で使用する実数値スナップショットです。</summary>
+/// <param name="Hp">HP 実数値です。</param>
+/// <param name="Attack">攻撃実数値です。</param>
+/// <param name="Defense">防御実数値です。</param>
+/// <param name="SpecialAttack">特攻実数値です。</param>
+/// <param name="SpecialDefense">特防実数値です。</param>
+/// <param name="Speed">素早さ実数値です。</param>
+public sealed record CombatStatSnapshot(
+    int Hp,
+    int Attack,
+    int Defense,
+    int SpecialAttack,
+    int SpecialDefense,
+    int Speed);
+
+/// <summary>ポケモンのタイプ組み合わせを表します。</summary>
+/// <param name="PrimaryType">主タイプです。</param>
+/// <param name="SecondaryType">副タイプです。</param>
+public sealed record PokemonTypeSlot(
+    PokemonType PrimaryType,
+    PokemonType? SecondaryType);
+
+/// <summary>技と PP 状態を表します。</summary>
+/// <param name="MoveName">技名です。</param>
+/// <param name="MaxPp">最大 PP です。</param>
+/// <param name="CurrentPp">現在 PP です。</param>
+public sealed record MoveState(
+    string MoveName,
+    int MaxPp,
+    int CurrentPp);
 
 /// <summary>run 配下の攻略ルートを表します。</summary>
 /// <param name="Id">route 識別子です。</param>
@@ -88,6 +190,7 @@ public sealed record RunInitialState(
 /// <param name="ProgressionFingerprint">authority から導出した fingerprint です。</param>
 /// <param name="Events">ordered progression event 一覧です。</param>
 /// <param name="Battles">route に紐づく battle 一覧です。</param>
+/// <param name="SimulatedPartyMemberIds">主対象として扱う party member 識別子一覧です。</param>
 /// <param name="LastVerifiedAt">直近検証日時です。</param>
 public sealed record RoutePlan(
     Guid Id,
@@ -97,6 +200,7 @@ public sealed record RoutePlan(
     string ProgressionFingerprint,
     IReadOnlyList<ProgressionEvent> Events,
     IReadOnlyList<BattleDefinition> Battles,
+    IReadOnlyList<Guid> SimulatedPartyMemberIds,
     DateTimeOffset? LastVerifiedAt);
 
 /// <summary>攻略進行イベントを表します。</summary>
@@ -104,19 +208,53 @@ public sealed record RoutePlan(
 /// <param name="Sequence">順序番号です。</param>
 /// <param name="EventType">イベント種別です。</param>
 /// <param name="Summary">表示用概要です。</param>
-/// <param name="LevelDelta">レベル変化量です。</param>
+/// <param name="LinkedBattleId">紐付く battle 識別子です。</param>
 /// <param name="MoneyDelta">所持金変化量です。</param>
 /// <param name="SourceReference">由来参照です。</param>
+/// <param name="PartyDeltas">ポケモンごとの進捗差分です。</param>
 /// <param name="Revision">イベント改訂番号です。</param>
 public sealed record ProgressionEvent(
     Guid Id,
     int Sequence,
     string EventType,
     string Summary,
-    int LevelDelta,
+    Guid? LinkedBattleId,
     int MoneyDelta,
     string? SourceReference,
+    IReadOnlyList<PartyProgressionDelta> PartyDeltas,
     int Revision);
+
+/// <summary>ポケモンごとの差分イベントを表します。</summary>
+/// <param name="PartyMemberId">対象 party member 識別子です。</param>
+/// <param name="ExperienceDelta">経験値差分です。</param>
+/// <param name="EffortValueDelta">努力値差分です。</param>
+/// <param name="PpDeltas">PP 差分です。</param>
+/// <param name="RareCandyLevels">ふしぎなアメ等で増えるレベル数です。</param>
+/// <param name="SpeciesOverride">種族変更後の種族名です。</param>
+/// <param name="AbilityOverride">変更後の特性です。</param>
+/// <param name="NatureOverride">変更後の性格です。</param>
+/// <param name="HeldItemOverride">変更後の所持アイテムです。</param>
+/// <param name="ReplaceMoves">技構成の置換結果です。</param>
+/// <param name="Notes">差分メモです。</param>
+public sealed record PartyProgressionDelta(
+    Guid PartyMemberId,
+    int ExperienceDelta,
+    StatValues EffortValueDelta,
+    IReadOnlyList<MovePpDelta> PpDeltas,
+    int RareCandyLevels,
+    string? SpeciesOverride,
+    string? AbilityOverride,
+    string? NatureOverride,
+    string? HeldItemOverride,
+    IReadOnlyList<MoveState>? ReplaceMoves,
+    string? Notes);
+
+/// <summary>技ごとの PP 差分を表します。</summary>
+/// <param name="MoveName">技名です。</param>
+/// <param name="Delta">PP 差分です。消費は負数、回復は正数です。</param>
+public sealed record MovePpDelta(
+    string MoveName,
+    int Delta);
 
 /// <summary>ユーザー定義の enemy group を表します。</summary>
 /// <param name="Id">group 識別子です。</param>
@@ -137,6 +275,9 @@ public sealed record EnemyGroupDefinition(
 /// <param name="Hp">HP 実数値です。</param>
 /// <param name="Attack">攻撃実数値です。</param>
 /// <param name="Defense">防御実数値です。</param>
+/// <param name="Typing">タイプ情報です。</param>
+/// <param name="BaseExperienceYield">基礎経験値です。</param>
+/// <param name="EffortValueYield">努力値獲得量です。</param>
 /// <param name="Note">補足メモです。</param>
 public sealed record EnemyCombatant(
     string Species,
@@ -144,6 +285,9 @@ public sealed record EnemyCombatant(
     int Hp,
     int Attack,
     int Defense,
+    PokemonTypeSlot Typing,
+    int BaseExperienceYield,
+    StatValues EffortValueYield,
     string? Note);
 
 /// <summary>route 上の battle 定義を表します。</summary>
@@ -156,6 +300,8 @@ public sealed record EnemyCombatant(
 /// <param name="MasterBattleCode">master 参照コードです。</param>
 /// <param name="EnemyGroupId">enemy group 参照識別子です。</param>
 /// <param name="InlineEnemies">battle に直接埋め込む敵一覧です。</param>
+/// <param name="SuggestedPartyMemberIds">入力補助として提示する party member 識別子です。</param>
+/// <param name="Participations">ポケモンごとの参加計画です。</param>
 /// <param name="Notes">補足メモです。</param>
 public sealed record BattleDefinition(
     Guid Id,
@@ -167,7 +313,33 @@ public sealed record BattleDefinition(
     string? MasterBattleCode,
     Guid? EnemyGroupId,
     IReadOnlyList<EnemyCombatant> InlineEnemies,
+    IReadOnlyList<Guid> SuggestedPartyMemberIds,
+    IReadOnlyList<BattleParticipationPlan> Participations,
     string? Notes);
+
+/// <summary>battle に対するポケモン別参加計画を表します。</summary>
+/// <param name="PartyMemberId">対象 party member 識別子です。</param>
+/// <param name="ParticipationMode">参加形態です。</param>
+/// <param name="ShareRatio">shared 時の配分比率です。</param>
+/// <param name="SuggestedRole">入力補助の役割表示です。</param>
+/// <param name="OutcomeChecklist">手動上書き結果です。</param>
+public sealed record BattleParticipationPlan(
+    Guid PartyMemberId,
+    string ParticipationMode,
+    decimal ShareRatio,
+    string? SuggestedRole,
+    ManualOutcomeChecklist OutcomeChecklist);
+
+/// <summary>battle 結果の手動チェック項目を表します。</summary>
+/// <param name="SentOutAndDefeated">対面参加して倒したかどうかです。</param>
+/// <param name="DefeatedWhileInReserve">控え扱いで倒したかどうかです。</param>
+/// <param name="DidNotDefeat">倒していないことを示すかどうかです。</param>
+/// <param name="IntentionalLoss">意図的に負けたかどうかです。</param>
+public sealed record ManualOutcomeChecklist(
+    bool SentOutAndDefeated,
+    bool DefeatedWhileInReserve,
+    bool DidNotDefeat,
+    bool IntentionalLoss);
 
 /// <summary>battle quick search のヒット結果です。</summary>
 /// <param name="BattleId">battle 識別子です。</param>
@@ -199,6 +371,44 @@ public sealed record RouteVerificationResult(
     IReadOnlyList<VerificationMessage> Warnings,
     IReadOnlyList<SourceReference> SourceReferences);
 
+/// <summary>進捗再計算結果を表します。</summary>
+/// <param name="RouteId">route 識別子です。</param>
+/// <param name="CalculatedAt">再計算日時です。</param>
+/// <param name="PartyMembers">ポケモン別投影結果です。</param>
+/// <param name="Warnings">進捗警告です。</param>
+/// <param name="ProgressionFingerprint">再計算に用いた fingerprint です。</param>
+/// <param name="SourceReferences">根拠参照一覧です。</param>
+public sealed record RouteProgressionProjection(
+    Guid RouteId,
+    DateTimeOffset CalculatedAt,
+    IReadOnlyList<PartyMemberProjection> PartyMembers,
+    IReadOnlyList<VerificationMessage> Warnings,
+    string ProgressionFingerprint,
+    IReadOnlyList<SourceReference> SourceReferences);
+
+/// <summary>ポケモン別の現在進捗投影を表します。</summary>
+/// <param name="PartyMemberId">party member 識別子です。</param>
+/// <param name="Slot">手持ちスロット番号です。</param>
+/// <param name="Species">現在種族名です。</param>
+/// <param name="Level">現在レベルです。</param>
+/// <param name="Experience">現在経験値です。</param>
+/// <param name="EffortValues">現在努力値です。</param>
+/// <param name="Moves">現在技と PP です。</param>
+/// <param name="SimulationScope">simulation 対象種別です。</param>
+/// <param name="IsBattleSimulatorEnabled">主対象かどうかです。</param>
+/// <param name="Warnings">このポケモンに紐づく警告です。</param>
+public sealed record PartyMemberProjection(
+    Guid PartyMemberId,
+    int Slot,
+    string Species,
+    int Level,
+    int Experience,
+    StatValues EffortValues,
+    IReadOnlyList<MoveState> Moves,
+    string SimulationScope,
+    bool IsBattleSimulatorEnabled,
+    IReadOnlyList<VerificationMessage> Warnings);
+
 /// <summary>検証メッセージです。</summary>
 /// <param name="Code">メッセージコードです。</param>
 /// <param name="Message">本文です。</param>
@@ -212,25 +422,27 @@ public sealed record VerificationMessage(
 /// <param name="RunId">run 識別子です。</param>
 /// <param name="RouteId">route 識別子です。</param>
 /// <param name="BattleId">battle 識別子です。</param>
+/// <param name="PlayerPartyMemberId">自ポケモン識別子です。</param>
 /// <param name="MoveName">技名です。</param>
 /// <param name="MovePower">技威力です。</param>
 /// <param name="MoveType">技タイプです。</param>
 /// <param name="Attacker">攻撃側状態です。</param>
 /// <param name="Defender">防御側状態です。</param>
 /// <param name="IsCritical">急所判定です。</param>
-/// <param name="TypeEffectiveness">タイプ相性倍率です。</param>
+/// <param name="TypeEffectivenessOverride">タイプ相性上書き倍率です。</param>
 /// <param name="AdditionalModifiers">追加補正一覧です。</param>
 public sealed record DamageCalculationRequest(
     Guid RunId,
     Guid RouteId,
     Guid BattleId,
+    Guid? PlayerPartyMemberId,
     string MoveName,
     int MovePower,
-    string MoveType,
+    PokemonType MoveType,
     CombatantSnapshot Attacker,
     CombatantSnapshot Defender,
     bool IsCritical,
-    decimal TypeEffectiveness,
+    decimal? TypeEffectivenessOverride,
     IReadOnlyList<DamageModifier> AdditionalModifiers);
 
 /// <summary>計算時点の戦闘参加者状態です。</summary>
@@ -239,13 +451,15 @@ public sealed record DamageCalculationRequest(
 /// <param name="Attack">攻撃実数値です。</param>
 /// <param name="Defense">防御実数値です。</param>
 /// <param name="PrimaryType">主タイプです。</param>
+/// <param name="SecondaryType">副タイプです。</param>
 /// <param name="HeldItem">所持アイテムです。</param>
 public sealed record CombatantSnapshot(
     string Species,
     int Level,
     int Attack,
     int Defense,
-    string PrimaryType,
+    PokemonType PrimaryType,
+    PokemonType? SecondaryType,
     string? HeldItem);
 
 /// <summary>ダメージ補正要素です。</summary>
@@ -265,6 +479,7 @@ public sealed record DamageModifier(
 /// <param name="AppliedModifiers">適用補正一覧です。</param>
 /// <param name="Explanation">説明文です。</param>
 /// <param name="FormulaTrace">計算トレースです。</param>
+/// <param name="Warnings">警告一覧です。</param>
 /// <param name="SourceReferences">参照一覧です。</param>
 public sealed record DamageCalculationResult(
     int MinimumDamage,
@@ -272,6 +487,7 @@ public sealed record DamageCalculationResult(
     IReadOnlyList<DamageModifier> AppliedModifiers,
     IReadOnlyList<string> Explanation,
     IReadOnlyList<string> FormulaTrace,
+    IReadOnlyList<string> Warnings,
     IReadOnlyList<SourceReference> SourceReferences);
 
 /// <summary>比較計算結果です。</summary>
@@ -289,6 +505,7 @@ public sealed record ComparisonPatternResult(
 /// <param name="RunId">run 識別子です。</param>
 /// <param name="RouteId">route 識別子です。</param>
 /// <param name="BattleId">battle 識別子です。</param>
+/// <param name="PlayerPartyMemberId">自ポケモン識別子です。</param>
 /// <param name="MoveName">技名です。</param>
 /// <param name="MoveType">技タイプです。</param>
 /// <param name="MovePowerRangeStart">探索開始威力です。</param>
@@ -299,8 +516,9 @@ public sealed record ThresholdSearchRequest(
     Guid RunId,
     Guid RouteId,
     Guid BattleId,
+    Guid? PlayerPartyMemberId,
     string MoveName,
-    string MoveType,
+    PokemonType MoveType,
     int MovePowerRangeStart,
     int MovePowerRangeEnd,
     int MaximumAttackBonus,
@@ -338,6 +556,7 @@ public sealed record ThresholdSearchResult(
 /// <param name="Visibility">公開範囲です。</param>
 /// <param name="BaseRevisionId">基底 revision 識別子です。</param>
 /// <param name="CurrentRevisionId">最新 revision 識別子です。</param>
+/// <param name="FixedVersionCatalog">共有時に固定した版情報です。</param>
 /// <param name="Revisions">revision 一覧です。</param>
 /// <param name="Comments">comment 一覧です。</param>
 /// <param name="PublishedAt">公開日時です。</param>
@@ -349,6 +568,7 @@ public sealed record SharedRouteSnapshot(
     string Visibility,
     Guid BaseRevisionId,
     Guid CurrentRevisionId,
+    VersionCatalog FixedVersionCatalog,
     IReadOnlyList<RouteRevision> Revisions,
     IReadOnlyList<ShareComment> Comments,
     DateTimeOffset PublishedAt);
@@ -391,12 +611,14 @@ public sealed record ShareComment(
 /// <param name="TargetRevisionId">比較先 revision 識別子です。</param>
 /// <param name="Summary">差分概要です。</param>
 /// <param name="ChangedFields">変更された項目一覧です。</param>
+/// <param name="ChangedVersions">変更された版情報一覧です。</param>
 public sealed record ShareDiffResult(
     Guid ShareId,
     Guid BaseRevisionId,
     Guid TargetRevisionId,
     string Summary,
-    IReadOnlyList<string> ChangedFields);
+    IReadOnlyList<string> ChangedFields,
+    IReadOnlyList<string> ChangedVersions);
 
 /// <summary>import job を表します。</summary>
 /// <param name="Id">job 識別子です。</param>
@@ -436,7 +658,70 @@ public sealed record SourceReference(
 /// <param name="Route">snapshot 化した route です。</param>
 /// <param name="InitialState">snapshot 時の初期状態です。</param>
 /// <param name="EnemyGroups">snapshot 時の enemy group です。</param>
+/// <param name="ProgressionProjection">snapshot 時の進捗投影です。</param>
+/// <param name="VersionCatalog">snapshot 時の版情報です。</param>
 public sealed record RouteSnapshotDocument(
     RoutePlan Route,
     RunInitialState? InitialState,
-    IReadOnlyList<EnemyGroupDefinition> EnemyGroups);
+    IReadOnlyList<EnemyGroupDefinition> EnemyGroups,
+    RouteProgressionProjection? ProgressionProjection,
+    VersionCatalog? VersionCatalog);
+
+/// <summary>ポケモンタイプを表します。</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum PokemonType
+{
+    /// <summary>ノーマルです。</summary>
+    Normal,
+
+    /// <summary>ほのおです。</summary>
+    Fire,
+
+    /// <summary>みずです。</summary>
+    Water,
+
+    /// <summary>でんきです。</summary>
+    Electric,
+
+    /// <summary>くさです。</summary>
+    Grass,
+
+    /// <summary>こおりです。</summary>
+    Ice,
+
+    /// <summary>かくとうです。</summary>
+    Fighting,
+
+    /// <summary>どくです。</summary>
+    Poison,
+
+    /// <summary>じめんです。</summary>
+    Ground,
+
+    /// <summary>ひこうです。</summary>
+    Flying,
+
+    /// <summary>エスパーです。</summary>
+    Psychic,
+
+    /// <summary>むしです。</summary>
+    Bug,
+
+    /// <summary>いわです。</summary>
+    Rock,
+
+    /// <summary>ゴーストです。</summary>
+    Ghost,
+
+    /// <summary>ドラゴンです。</summary>
+    Dragon,
+
+    /// <summary>あくです。</summary>
+    Dark,
+
+    /// <summary>はがねです。</summary>
+    Steel,
+
+    /// <summary>フェアリーです。</summary>
+    Fairy
+}
