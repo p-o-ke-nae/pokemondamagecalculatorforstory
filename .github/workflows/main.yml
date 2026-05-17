@@ -84,7 +84,7 @@ jobs:
           docker compose -p "$TEST_DB_COMPOSE_PROJECT" -f docker-compose.dotnet.test-db.yml up -d --wait
 
       - name: Run tests
-        run: dotnet test --solution "${{ steps.solution.outputs.path }}" --no-build --configuration Release --verbosity normal
+        run: dotnet test "${{ steps.solution.outputs.path }}" --no-build --configuration Release --verbosity normal
 
       - name: Stop SQL Server test database
         if: always()
