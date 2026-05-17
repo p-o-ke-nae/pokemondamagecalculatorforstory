@@ -89,6 +89,7 @@ public sealed record RunAggregate(
     RunInitialState? InitialState,
     IReadOnlyList<RoutePlan> Routes,
     IReadOnlyList<EnemyGroupDefinition> EnemyGroups,
+    IReadOnlyList<CalculationPreset> Presets,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
@@ -187,6 +188,8 @@ public sealed record MoveState(
 /// <param name="RunId">親 run 識別子です。</param>
 /// <param name="Name">route 名です。</param>
 /// <param name="IsStale">再計算が必要な状態かどうかです。</param>
+/// <param name="InitialStateRevision">fingerprint 算出に使った初期状態 revision です。</param>
+/// <param name="OrderedProgressionEventRevisions">fingerprint 算出に使ったイベント revision 順序です。</param>
 /// <param name="ProgressionFingerprint">authority から導出した fingerprint です。</param>
 /// <param name="Events">ordered progression event 一覧です。</param>
 /// <param name="Battles">route に紐づく battle 一覧です。</param>
@@ -197,6 +200,8 @@ public sealed record RoutePlan(
     Guid RunId,
     string Name,
     bool IsStale,
+    int InitialStateRevision,
+    IReadOnlyList<int> OrderedProgressionEventRevisions,
     string ProgressionFingerprint,
     IReadOnlyList<ProgressionEvent> Events,
     IReadOnlyList<BattleDefinition> Battles,
@@ -436,6 +441,7 @@ public sealed record DamageCalculationRequest(
     Guid RouteId,
     Guid BattleId,
     Guid? PlayerPartyMemberId,
+    Guid? PresetId,
     string MoveName,
     int MovePower,
     PokemonType MoveType,
@@ -507,68 +513,128 @@ public sealed record ComparisonPatternResult(
 /// <param name="BattleId">battle 識別子です。</param>
 /// <param name="PlayerPartyMemberId">自ポケモン識別子です。</param>
 /// <param name="MoveName">技名です。</param>
+/// <param name="MovePower">技威力です。</param>
 /// <param name="MoveType">技タイプです。</param>
-/// <param name="MovePowerRangeStart">探索開始威力です。</param>
-/// <param name="MovePowerRangeEnd">探索終了威力です。</param>
-/// <param name="MaximumAttackBonus">探索する攻撃補正最大値です。</param>
-/// <param name="TargetMinimumDamage">達成したい最小ダメージです。</param>
+/// <param name="SearchStats">探索対象 IV 一覧です。</param>
+/// <param name="ConditionMode">初期リリースでは allOf 固定です。</param>
+/// <param name="Conditions">判定条件一覧です。</param>
+/// <param name="PriorityOrder">未サポートの priority 指定です。</param>
 public sealed record ThresholdSearchRequest(
     Guid RunId,
     Guid RouteId,
     Guid BattleId,
     Guid? PlayerPartyMemberId,
+    Guid? PresetId,
     string MoveName,
-    PokemonType MoveType,
-    int MovePowerRangeStart,
-    int MovePowerRangeEnd,
-    int MaximumAttackBonus,
-    int TargetMinimumDamage);
-
-/// <summary>しきい値探索候補です。</summary>
-/// <param name="MovePower">候補威力です。</param>
-/// <param name="AttackBonus">攻撃補正です。</param>
-/// <param name="MinimumDamage">達成最小ダメージです。</param>
-/// <param name="Reason">採用または棄却理由です。</param>
-public sealed record ThresholdCandidate(
     int MovePower,
-    int AttackBonus,
+    PokemonType MoveType,
+    IReadOnlyList<string> SearchStats,
+    string ConditionMode,
+    IReadOnlyList<ThresholdCondition> Conditions,
+    IReadOnlyList<string> PriorityOrder);
+
+/// <summary>しきい値探索条件です。</summary>
+/// <param name="ConditionKey">識別キーです。</param>
+/// <param name="ConditionType">minimum-damage-at-least などの条件種別です。</param>
+/// <param name="ExpectedValue">期待値です。</param>
+public sealed record ThresholdCondition(
+    string ConditionKey,
+    string ConditionType,
+    int ExpectedValue);
+
+/// <summary>しきい値探索の最小解です。</summary>
+/// <param name="IndividualValues">解となる IV です。</param>
+/// <param name="MinimumDamage">この解の最小ダメージです。</param>
+/// <param name="MaximumDamage">この解の最大ダメージです。</param>
+/// <param name="SatisfiedConditions">満たした条件一覧です。</param>
+public sealed record ThresholdSolution(
+    StatValues IndividualValues,
     int MinimumDamage,
-    string Reason);
+    int MaximumDamage,
+    IReadOnlyList<string> SatisfiedConditions);
 
 /// <summary>しきい値探索結果です。</summary>
-/// <param name="TargetMinimumDamage">目標最小ダメージです。</param>
-/// <param name="Solved">条件を満たす候補が存在するかどうかです。</param>
-/// <param name="Candidates">条件を満たした候補です。</param>
-/// <param name="Rejected">棄却候補です。</param>
+/// <param name="Status">solved / no-solution / multiple-minimal-solutions です。</param>
+/// <param name="BestSolution">代表解です。</param>
+/// <param name="AllMinimalSolutions">最小解一覧です。</param>
+/// <param name="SearchedRangeSummary">探索範囲要約です。</param>
+/// <param name="UnsatisfiedConditions">未充足条件一覧です。</param>
 /// <param name="SourceReferences">根拠参照です。</param>
 public sealed record ThresholdSearchResult(
-    int TargetMinimumDamage,
-    bool Solved,
-    IReadOnlyList<ThresholdCandidate> Candidates,
-    IReadOnlyList<ThresholdCandidate> Rejected,
+    string Status,
+    ThresholdSolution? BestSolution,
+    IReadOnlyList<ThresholdSolution> AllMinimalSolutions,
+    string SearchedRangeSummary,
+    IReadOnlyList<string> UnsatisfiedConditions,
     IReadOnlyList<SourceReference> SourceReferences);
+
+/// <summary>計算プリセットです。</summary>
+public sealed record CalculationPreset(
+    Guid Id,
+    Guid RunId,
+    int Revision,
+    IReadOnlyList<StatRange> IvRanges,
+    IReadOnlyList<EffortValuePattern> EvPatterns,
+    IReadOnlyList<NaturePattern> NaturePatterns,
+    string? Notes);
+
+/// <summary>個体値レンジ定義です。</summary>
+public sealed record StatRange(
+    string Stat,
+    int Minimum,
+    int Maximum);
+
+/// <summary>努力値パターンです。</summary>
+public sealed record EffortValuePattern(
+    string PatternKey,
+    StatValues EffortValues,
+    string? Notes);
+
+/// <summary>性格パターンです。</summary>
+public sealed record NaturePattern(
+    string PatternKey,
+    string Nature,
+    string? Notes);
 
 /// <summary>共有された immutable snapshot を表します。</summary>
 /// <param name="Id">share 識別子です。</param>
 /// <param name="OwnerUserId">公開者識別子です。</param>
+/// <param name="SourceType">route-plan / calculation / comparison / verification などの共有対象種別です。</param>
+/// <param name="SourceId">共有対象識別子です。</param>
 /// <param name="RunId">元 run 識別子です。</param>
 /// <param name="RouteId">元 route 識別子です。</param>
 /// <param name="Visibility">公開範囲です。</param>
+/// <param name="AllowedRoles">共有先に許可する viewer/commenter/reviser 役割一覧です。</param>
 /// <param name="BaseRevisionId">基底 revision 識別子です。</param>
 /// <param name="CurrentRevisionId">最新 revision 識別子です。</param>
 /// <param name="FixedVersionCatalog">共有時に固定した版情報です。</param>
+/// <param name="AdditionalMasterGroups">追加 master group 一覧です。</param>
+/// <param name="ImportJobIds">固定した import job 識別子一覧です。</param>
+/// <param name="SharePolicyDigest">共有ポリシー digest です。</param>
+/// <param name="ProgressionFingerprint">固定した progression fingerprint です。</param>
+/// <param name="CalculationInputDigest">計算入力 digest です。</param>
+/// <param name="CalculationOutputDigest">計算出力 digest です。</param>
 /// <param name="Revisions">revision 一覧です。</param>
 /// <param name="Comments">comment 一覧です。</param>
 /// <param name="PublishedAt">公開日時です。</param>
 public sealed record SharedRouteSnapshot(
     Guid Id,
     string OwnerUserId,
-    Guid RunId,
-    Guid RouteId,
+    string SourceType,
+    Guid SourceId,
+    Guid? RunId,
+    Guid? RouteId,
     string Visibility,
+    IReadOnlyList<string> AllowedRoles,
     Guid BaseRevisionId,
     Guid CurrentRevisionId,
     VersionCatalog FixedVersionCatalog,
+    IReadOnlyList<string> AdditionalMasterGroups,
+    IReadOnlyList<Guid> ImportJobIds,
+    string SharePolicyDigest,
+    string ProgressionFingerprint,
+    string? CalculationInputDigest,
+    string? CalculationOutputDigest,
     IReadOnlyList<RouteRevision> Revisions,
     IReadOnlyList<ShareComment> Comments,
     DateTimeOffset PublishedAt);
@@ -612,23 +678,57 @@ public sealed record ShareComment(
 /// <param name="Summary">差分概要です。</param>
 /// <param name="ChangedFields">変更された項目一覧です。</param>
 /// <param name="ChangedVersions">変更された版情報一覧です。</param>
+/// <param name="ChangedPolicies">変更された共有ポリシー一覧です。</param>
 public sealed record ShareDiffResult(
     Guid ShareId,
     Guid BaseRevisionId,
     Guid TargetRevisionId,
     string Summary,
     IReadOnlyList<string> ChangedFields,
-    IReadOnlyList<string> ChangedVersions);
+    IReadOnlyList<string> ChangedVersions,
+    IReadOnlyList<string> ChangedPolicies);
+
+/// <summary>import row ごとの結果です。</summary>
+/// <param name="RowNumber">行番号です。</param>
+/// <param name="Status">success / warning / error / duplicate などの状態です。</param>
+/// <param name="Message">詳細です。</param>
+public sealed record ImportRowResult(
+    int RowNumber,
+    string Status,
+    string Message);
+
+/// <summary>重複サマリーです。</summary>
+/// <param name="TotalRows">対象総行数です。</param>
+/// <param name="DuplicateRows">重複行番号一覧です。</param>
+public sealed record ImportDuplicateSummary(
+    int TotalRows,
+    IReadOnlyList<int> DuplicateRows);
+
+/// <summary>監査エントリです。</summary>
+/// <param name="Action">実行内容です。</param>
+/// <param name="UserId">実行者識別子です。</param>
+/// <param name="OccurredAt">発生日時です。</param>
+/// <param name="Detail">詳細です。</param>
+public sealed record ImportAuditEntry(
+    string Action,
+    string UserId,
+    DateTimeOffset OccurredAt,
+    string Detail);
 
 /// <summary>import job を表します。</summary>
 /// <param name="Id">job 識別子です。</param>
 /// <param name="RulesetId">対象ルールセット識別子です。</param>
 /// <param name="WorkbookName">対象 workbook 名です。</param>
 /// <param name="Mode">dry-run / commit などの実行モードです。</param>
+/// <param name="SourceType">spreadsheet などの入力種別です。</param>
 /// <param name="Status">状態です。</param>
 /// <param name="SubmittedByUserId">実行者識別子です。</param>
+/// <param name="SourceMetadata">入力元 metadata です。</param>
 /// <param name="Summary">結果概要です。</param>
 /// <param name="Messages">詳細メッセージ一覧です。</param>
+/// <param name="RowResults">行ごとの結果です。</param>
+/// <param name="DuplicateSummary">重複サマリーです。</param>
+/// <param name="AuditTrail">監査証跡です。</param>
 /// <param name="PublishedMasterVersionSetId">生成された version set 識別子です。</param>
 /// <param name="CreatedAt">作成日時です。</param>
 /// <param name="CompletedAt">完了日時です。</param>
@@ -637,10 +737,15 @@ public sealed record ImportJob(
     Guid RulesetId,
     string WorkbookName,
     string Mode,
+    string SourceType,
     string Status,
     string SubmittedByUserId,
+    string SourceMetadata,
     string Summary,
     IReadOnlyList<string> Messages,
+    IReadOnlyList<ImportRowResult> RowResults,
+    ImportDuplicateSummary DuplicateSummary,
+    IReadOnlyList<ImportAuditEntry> AuditTrail,
     Guid? PublishedMasterVersionSetId,
     DateTimeOffset CreatedAt,
     DateTimeOffset? CompletedAt);
@@ -654,18 +759,38 @@ public sealed record SourceReference(
     string Label,
     string ReferenceType);
 
-/// <summary>JSON 永続化に使う route snapshot 専用モデルです。</summary>
+/// <summary>JSON 永続化に使う share snapshot 専用モデルです。</summary>
+/// <param name="SourceType">共有対象種別です。</param>
+/// <param name="SourceId">共有対象識別子です。</param>
 /// <param name="Route">snapshot 化した route です。</param>
 /// <param name="InitialState">snapshot 時の初期状態です。</param>
 /// <param name="EnemyGroups">snapshot 時の enemy group です。</param>
 /// <param name="ProgressionProjection">snapshot 時の進捗投影です。</param>
 /// <param name="VersionCatalog">snapshot 時の版情報です。</param>
+/// <param name="AdditionalMasterGroups">追加 master group 一覧です。</param>
+/// <param name="ImportJobIds">関連 import job 一覧です。</param>
+/// <param name="SharePolicyDigest">共有ポリシー digest です。</param>
+/// <param name="ProgressionFingerprint">固定した progression fingerprint です。</param>
+/// <param name="CalculationInputDigest">計算入力 digest です。</param>
+/// <param name="CalculationOutputDigest">計算出力 digest です。</param>
+/// <param name="FrozenInputJson">generic source の固定入力 JSON です。</param>
+/// <param name="FrozenOutputJson">generic source の固定出力 JSON です。</param>
 public sealed record RouteSnapshotDocument(
+    string SourceType,
+    Guid SourceId,
     RoutePlan Route,
     RunInitialState? InitialState,
     IReadOnlyList<EnemyGroupDefinition> EnemyGroups,
     RouteProgressionProjection? ProgressionProjection,
-    VersionCatalog? VersionCatalog);
+    VersionCatalog? VersionCatalog,
+    IReadOnlyList<string> AdditionalMasterGroups,
+    IReadOnlyList<Guid> ImportJobIds,
+    string SharePolicyDigest,
+    string ProgressionFingerprint,
+    string? CalculationInputDigest,
+    string? CalculationOutputDigest,
+    string? FrozenInputJson,
+    string? FrozenOutputJson);
 
 /// <summary>ポケモンタイプを表します。</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using PokemonDamageCalculatorForStory.Domain.Models;
 
 namespace PokemonDamageCalculatorForStory.Web.Api;
@@ -261,6 +262,7 @@ internal sealed record DamageCalculationApiRequest(
     Guid RouteId,
     Guid BattleId,
     Guid? PlayerPartyMemberId,
+    Guid? PresetId,
     string MoveName,
     int MovePower,
     string MoveType,
@@ -276,6 +278,7 @@ internal sealed record DamageCalculationApiRequest(
             RouteId,
             BattleId,
             PlayerPartyMemberId,
+            PresetId,
             MoveName,
             MovePower,
             StoryApiTypeParser.ParsePokemonType(MoveType),
@@ -296,17 +299,28 @@ internal sealed record ComparePatternsRequest(
     DamageCalculationApiRequest BaseCase,
     IReadOnlyList<ComparePatternItemRequest> Patterns);
 
+internal sealed record ThresholdConditionRequest(
+    string ConditionKey,
+    string ConditionType,
+    int ExpectedValue)
+{
+    public ThresholdCondition ToDomain()
+        => new(ConditionKey, ConditionType, ExpectedValue);
+}
+
 internal sealed record ThresholdSearchApiRequest(
     Guid RunId,
     Guid RouteId,
     Guid BattleId,
     Guid? PlayerPartyMemberId,
+    Guid? PresetId,
     string MoveName,
+    int MovePower,
     string MoveType,
-    int MovePowerRangeStart,
-    int MovePowerRangeEnd,
-    int MaximumAttackBonus,
-    int TargetMinimumDamage)
+    IReadOnlyList<string> SearchStats,
+    string ConditionMode,
+    IReadOnlyList<ThresholdConditionRequest> Conditions,
+    IReadOnlyList<string>? PriorityOrder)
 {
     public ThresholdSearchRequest ToDomain()
         => new(
@@ -314,21 +328,64 @@ internal sealed record ThresholdSearchApiRequest(
             RouteId,
             BattleId,
             PlayerPartyMemberId,
+            PresetId,
             MoveName,
+            MovePower,
             StoryApiTypeParser.ParsePokemonType(MoveType),
-            MovePowerRangeStart,
-            MovePowerRangeEnd,
-            MaximumAttackBonus,
-            TargetMinimumDamage);
+            SearchStats,
+            ConditionMode,
+            Conditions.Select(item => item.ToDomain()).ToArray(),
+            PriorityOrder?.ToArray() ?? Array.Empty<string>());
 }
 
-internal sealed record CreateShareRequest(Guid RunId, Guid RouteId, string Visibility, string Summary);
+internal sealed record CreateShareRequest(
+    Guid RunId,
+    string SourceType,
+    Guid SourceId,
+    string Visibility,
+    IReadOnlyList<string>? AllowedRoles,
+    string Summary,
+    JsonElement? FrozenInput,
+    JsonElement? FrozenOutput);
 
 internal sealed record AddCommentRequest(Guid? RevisionId, string Body);
 
 internal sealed record PublishRevisionRequest(string Summary);
 
-internal sealed record CreateImportJobRequest(Guid RulesetId, string WorkbookName);
+internal sealed record CreateImportJobRequest(Guid RulesetId, string WorkbookName, string? Mode, string? SourceType, string? WorkbookContent);
+
+internal sealed record StatRangeRequest(string Stat, int Minimum, int Maximum)
+{
+    public StatRange ToDomain() => new(Stat, Minimum, Maximum);
+}
+
+internal sealed record EffortValuePatternRequest(string PatternKey, StatValuesRequest EffortValues, string? Notes)
+{
+    public EffortValuePattern ToDomain() => new(PatternKey, EffortValues.ToDomain(), Notes);
+}
+
+internal sealed record NaturePatternRequest(string PatternKey, string Nature, string? Notes)
+{
+    public NaturePattern ToDomain() => new(PatternKey, Nature, Notes);
+}
+
+internal sealed record UpsertPresetRequest(
+    Guid RunId,
+    IReadOnlyList<StatRangeRequest> IvRanges,
+    IReadOnlyList<EffortValuePatternRequest> EvPatterns,
+    IReadOnlyList<NaturePatternRequest> NaturePatterns,
+    string? Notes)
+{
+    public CalculationPreset ToDomain(Guid? presetId = null, int revision = 0)
+        => new(
+            presetId ?? Guid.Empty,
+            RunId,
+            revision,
+            IvRanges.Select(item => item.ToDomain()).ToArray(),
+            EvPatterns.Select(item => item.ToDomain()).ToArray(),
+            NaturePatterns.Select(item => item.ToDomain()).ToArray(),
+            Notes);
+}
 
 internal static class StoryApiTypeParser
 {

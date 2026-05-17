@@ -184,39 +184,82 @@ api.MapPost("/calculations/compare-patterns", async (ComparePatternsRequest requ
         return Results.Ok(result);
     })
     .RequireAuthorization(AppPolicies.RunOwner);
+api.MapPost("/calculations/damage:compare-patterns", async (ComparePatternsRequest request, PokemonStoryService service, CancellationToken cancellationToken) =>
+    {
+        var patterns = request.Patterns.ToDictionary(
+            item => item.PatternKey,
+            item => (
+                item.MovePowerDelta,
+                item.AttackBonus,
+                (IReadOnlyList<DamageModifier>)(item.AdditionalModifiers?.Select(modifier => modifier.ToDomain()).ToArray() ?? Array.Empty<DamageModifier>())));
+
+        var result = await service.ComparePatternsAsync(request.BaseCase.ToDomain(), patterns, cancellationToken);
+        return Results.Ok(result);
+    })
+    .RequireAuthorization(AppPolicies.RunOwner);
+
+api.MapPost("/calculations/damage:search-thresholds", async (ThresholdSearchApiRequest request, PokemonStoryService service, CancellationToken cancellationToken) =>
+        Results.Ok(await service.ThresholdSearchAsync(request.ToDomain(), cancellationToken)))
+    .RequireAuthorization(AppPolicies.RunOwner);
 
 api.MapPost("/calculations/threshold-search", async (ThresholdSearchApiRequest request, PokemonStoryService service, CancellationToken cancellationToken) =>
         Results.Ok(await service.ThresholdSearchAsync(request.ToDomain(), cancellationToken)))
     .RequireAuthorization(AppPolicies.RunOwner);
 
+api.MapGet("/presets", async (Guid runId, PokemonStoryService service, CancellationToken cancellationToken) =>
+        Results.Ok(await service.ListPresetsAsync(runId, cancellationToken)))
+    .RequireAuthorization(AppPolicies.RunOwner);
+api.MapPost("/presets", async (UpsertPresetRequest request, PokemonStoryService service, CancellationToken cancellationToken) =>
+        Results.Ok(await service.CreatePresetAsync(request.ToDomain(), cancellationToken)))
+    .RequireAuthorization(AppPolicies.RunOwner);
+api.MapGet("/presets/{presetId:guid}", async (Guid presetId, PokemonStoryService service, CancellationToken cancellationToken) =>
+        Results.Ok(await service.GetPresetAsync(presetId, cancellationToken)))
+    .RequireAuthorization(AppPolicies.RunOwner);
+api.MapPut("/presets/{presetId:guid}", async (Guid presetId, UpsertPresetRequest request, PokemonStoryService service, CancellationToken cancellationToken) =>
+        Results.Ok(await service.UpdatePresetAsync(presetId, request.ToDomain(presetId), cancellationToken)))
+    .RequireAuthorization(AppPolicies.RunOwner);
+
 var shares = api.MapGroup("/shares");
+shares.MapPost("/snapshots", async (CreateShareRequest request, PokemonStoryService service, CancellationToken cancellationToken) =>
+        Results.Ok(await service.CreateShareAsync(request.RunId, request.SourceType, request.SourceId, request.Visibility, request.AllowedRoles ?? Array.Empty<string>(), request.Summary, request.FrozenInput?.GetRawText(), request.FrozenOutput?.GetRawText(), cancellationToken)))
+    .RequireAuthorization(AppPolicies.RunOwner);
 shares.MapPost(string.Empty, async (CreateShareRequest request, PokemonStoryService service, CancellationToken cancellationToken) =>
-        Results.Ok(await service.CreateShareAsync(request.RunId, request.RouteId, request.Visibility, request.Summary, cancellationToken)))
+        Results.Ok(await service.CreateShareAsync(request.RunId, request.SourceType, request.SourceId, request.Visibility, request.AllowedRoles ?? Array.Empty<string>(), request.Summary, request.FrozenInput?.GetRawText(), request.FrozenOutput?.GetRawText(), cancellationToken)))
     .RequireAuthorization(AppPolicies.RunOwner);
 shares.MapGet("/{shareId:guid}", async (Guid shareId, PokemonStoryService service, CancellationToken cancellationToken) =>
         Results.Ok(await service.GetShareAsync(shareId, cancellationToken)))
-    .AllowAnonymous();
+    .RequireAuthorization();
 shares.MapGet("/{shareId:guid}/comments", async (Guid shareId, PokemonStoryService service, CancellationToken cancellationToken) =>
         Results.Ok(await service.ListCommentsAsync(shareId, cancellationToken)))
-    .AllowAnonymous();
+    .RequireAuthorization();
 shares.MapPost("/{shareId:guid}/comments", async (Guid shareId, AddCommentRequest request, PokemonStoryService service, CancellationToken cancellationToken) =>
         Results.Ok(await service.AddCommentAsync(shareId, request.RevisionId, request.Body, cancellationToken)))
-    .RequireAuthorization(AppPolicies.RunOwner);
+    .RequireAuthorization();
 shares.MapGet("/{shareId:guid}/revisions", async (Guid shareId, PokemonStoryService service, CancellationToken cancellationToken) =>
         Results.Ok(await service.ListRevisionsAsync(shareId, cancellationToken)))
-    .AllowAnonymous();
+    .RequireAuthorization();
+shares.MapPost("/{shareId:guid}:diff", async (Guid shareId, Guid? baseRevisionId, Guid? targetRevisionId, PokemonStoryService service, CancellationToken cancellationToken) =>
+        Results.Ok(await service.GetShareDiffAsync(shareId, baseRevisionId, targetRevisionId, cancellationToken)))
+    .RequireAuthorization();
 shares.MapGet("/{shareId:guid}/diff", async (Guid shareId, Guid? baseRevisionId, Guid? targetRevisionId, PokemonStoryService service, CancellationToken cancellationToken) =>
         Results.Ok(await service.GetShareDiffAsync(shareId, baseRevisionId, targetRevisionId, cancellationToken)))
-    .AllowAnonymous();
+    .RequireAuthorization();
+shares.MapPost("/{shareId:guid}:revise", async (Guid shareId, PublishRevisionRequest request, PokemonStoryService service, CancellationToken cancellationToken) =>
+        Results.Ok(await service.PublishRevisionAsync(shareId, request.Summary, cancellationToken)))
+    .RequireAuthorization();
 shares.MapPost("/{shareId:guid}:publish-revision", async (Guid shareId, PublishRevisionRequest request, PokemonStoryService service, CancellationToken cancellationToken) =>
         Results.Ok(await service.PublishRevisionAsync(shareId, request.Summary, cancellationToken)))
     .RequireAuthorization(AppPolicies.RunOwner);
 
 var admin = api.MapGroup("/admin").RequireAuthorization(AppPolicies.AdminOnly);
+admin.MapPost("/imports", async (CreateImportJobRequest request, PokemonStoryService service, CancellationToken cancellationToken) =>
+        Results.Ok(await service.CreateImportJobAsync(request.RulesetId, request.WorkbookName, request.Mode, request.SourceType, request.WorkbookContent, cancellationToken)));
+admin.MapGet("/imports/{jobId:guid}", async (Guid jobId, PokemonStoryService service, CancellationToken cancellationToken) =>
+        Results.Ok(await service.GetImportJobAsync(jobId, cancellationToken)));
 admin.MapPost("/import-jobs:dry-run", async (CreateImportJobRequest request, PokemonStoryService service, CancellationToken cancellationToken) =>
-        Results.Ok(await service.CreateDryRunImportJobAsync(request.RulesetId, request.WorkbookName, cancellationToken)));
+        Results.Ok(await service.CreateDryRunImportJobAsync(request.RulesetId, request.WorkbookName, request.SourceType ?? "spreadsheet", request.WorkbookContent, cancellationToken)));
 admin.MapPost("/import-jobs", async (CreateImportJobRequest request, PokemonStoryService service, CancellationToken cancellationToken) =>
-        Results.Ok(await service.CreateCommitImportJobAsync(request.RulesetId, request.WorkbookName, cancellationToken)));
+        Results.Ok(await service.CreateCommitImportJobAsync(request.RulesetId, request.WorkbookName, request.SourceType ?? "spreadsheet", request.WorkbookContent, cancellationToken)));
 admin.MapGet("/import-jobs/{jobId:guid}", async (Guid jobId, PokemonStoryService service, CancellationToken cancellationToken) =>
         Results.Ok(await service.GetImportJobAsync(jobId, cancellationToken)));
 admin.MapGet("/master-version-sets", async (PokemonStoryService service, CancellationToken cancellationToken) =>

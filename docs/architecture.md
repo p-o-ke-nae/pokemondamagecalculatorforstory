@@ -2,11 +2,11 @@
 
 ## 概要
 
-このドキュメントは、リポジトリ全体に対して影響の大きい設計変更の境界を俯瞰するための一覧です。リポジトリ直下の [`../ARCHITECTURE.md`](../ARCHITECTURE.md) が生成される `.NET` アプリケーションの基礎アーキテクチャを扱うのに対し、本書は issue ごとの設計スライス、実装状況、関連ドキュメントへの導線を整理します。
+このドキュメントは、リポジトリ全体に対して影響の大きい設計変更の境界を俯瞰するための一覧です。リポジトリ直下の [`../ARCHITECTURE.md`](../ARCHITECTURE.md) が生成される `.NET` アプリケーションの基礎アーキテクチャを扱うのに対し、本書は issue ごとの設計スライス、承認済み契約、Phase 3 で満たすべき責務境界を整理します。
 
 | 項目 | 内容 |
 |---|---|
-| 現在の役割 | 影響モジュール一覧、責務境界、承認済みスコープの実装状況を明示 |
+| 現在の役割 | 影響モジュール一覧、責務境界、承認済みスコープの必須契約を明示 |
 | 基礎アーキテクチャ | [`../ARCHITECTURE.md`](../ARCHITECTURE.md) |
 | Issue #1 関連設計 | [Pokemon Story Damage Calculator API Foundation](designs/pokemon-story-damage-calculator-api-foundation.md) |
 | Issue #1 関連テスト | [Pokemon Story Damage Calculator Foundation Test Plan](tests/pokemon-story-damage-calculator-foundation-test-plan.md) |
@@ -17,7 +17,7 @@
 
 | Slice | Issue | Phase / Step | Status |
 |---|---|---|---|
-| Pokemon story damage calculator foundation | #1 | Phase 3 / Step 3.4.5 | implementation-aligned |
+| Pokemon story damage calculator foundation | #1 | Phase 2 / Step 2.3 | design contract for review |
 | Bootstrap foundation redesign | #8 | Phase 3 / Step 3.4.5 | implementation-aligned |
 
 ## ドキュメント境界
@@ -29,15 +29,15 @@
 
 ## Issue #1: Pokemon Story Damage Calculator Scope Impact
 
-### 実装済みサマリ
+### 設計サマリ
 
-| 観点 | 実装状況 |
+| 観点 | 必須契約 |
 |---|---|
-| サンプル置換 | `WeatherForecast` は撤去済みで、`Program.cs` の minimal API が story calculator foundation を公開する |
-| モジュール境界 | `Rulesets`, `Runs/Routes`, `BattleParticipation`, `ProgressionProjection`, `Calculations`, `Sharing`, `IdentityAccess`, `AdminImports` を `PokemonStoryService` と独立した進捗計算補助へ束ねる |
-| 状態の authority | `RunInitialState`（最大 6 体 party）、ordered `ProgressionEvent`、`BattleParticipationPlan`、`MasterVersionSet`、`BattleDefinition` / `EnemyGroupDefinition` を保存し、verification / progression / damage / diff は導出する |
-| 認証と認可 | 通常実行時は Google access token bearer、run 系は所有者必須、admin 系は `Administrator` ロール必須 |
-| 現時点の簡略化 | import は job 作成中心、share 公開範囲は `public` のみ匿名 read、damage / progression / threshold / diff は foundation 用の簡易ロジック |
+| モジュール境界 | `Rulesets`, `Runs/Routes`, `BattleParticipation`, `ProgressionProjection`, `Calculations`, `Sharing`, `IdentityAccess`, `AdminImports` を分離し、damage と progression を別 subsystem / 別 code path として扱う |
+| 状態の authority | `RunInitialState`（最大 6 体 party）、ordered `ProgressionEvent`、`BattleParticipationPlan`、`MasterVersionSet`、`BattleDefinition` / `EnemyGroupDefinition` を authority source とし、verification / progression / stale detection / damage / diff は再導出する |
+| snapshot 再現性 | shareable snapshot は `damageRulesetVersion`, `experienceRulesetVersion`, `pokemonMasterVersion`, `moveMasterVersion`, `abilityMasterVersion`, `itemMasterVersion`, `typeChartVersion`, `natureMasterVersion`, `storyEnemyMasterVersion` または `userEnemyGroupRevision`, `experienceTableVersion`, `effortValueMasterVersion`, `ppRuleVersion`, `importJobIds[]`, `progressionFingerprint`, `calculationInputDigest`, `calculationOutputDigest` に加え、実計算で参照した追加 master group と share policy を固定する |
+| collaboration policy | 初期リリースで `owner`, `viewer`, `commenter`, `reviser` の権限概念を持ち、comment / diff / revision は share policy に従って認可する |
+| 認証と認可 | 通常実行時は Google access token bearer、run 系は所有者必須、admin 系は `Administrator` ロール必須、shared snapshot は policy ベースで read/comment/revise を制御する |
 
 ### モジュール関係
 
@@ -65,28 +65,29 @@ graph TD
 
 | Layer | 主な責務 | Sequencing note |
 |---|---|---|
-| Domain | records 中心の authority model、party progression、damage result、share/import artifact を定義 | `PokemonType` と `VersionCatalog` を domain の核として持つ |
-| Application | `PokemonStoryService` が run 管理、verification、progression、damage、share、import を集約する | `StoryProgressionProjector` と `PokemonTypeChart` を分離し、EXP / EV / PP と damage を別コードパスにした |
-| Infrastructure | EF Core + SQL Server / InMemory、JSON 永続化 repository、初期 seed を提供する | 非 production 起動時に migration と seed を自動適用する |
-| Web | minimal API、Google bearer auth、Swagger、problem details を提供する | 開発環境のみ Swagger UI を公開する |
-| Tests | service test と API E2E で foundation 契約を固定する | SQL Server 永続化や Google 実トークン検証までは未自動化 |
+| Domain | records 中心の authority model、party progression、threshold 条件、share/import artifact を定義 | `PokemonType` と version metadata key 群を domain 契約の核として持つ |
+| Application | run 管理、verification、progression、damage、threshold、share、import を集約する | `StoryProgressionProjector` と damage kernel を分離し、EXP / EV / PP と damage を別コードパスにする |
+| Infrastructure | EF Core + SQL Server / InMemory、JSON 永続化 repository、import audit trail、seed を提供する | import dry-run / commit / publish の監査可能性を保持する |
+| Web | minimal API、Google bearer auth、Swagger、problem details を提供する | shared snapshot と admin import は role/policy ベースの認可を明示する |
+| Tests | service test と API E2E で foundation 契約を固定する | stale detection、share policy、threshold search、import audit を Phase 3 完了条件に含める |
 
-### 実装済み capability map
+### 必須 capability map
 
-| Capability | 実装状況 | Notes |
+| Capability | 必須契約 | Phase 3 で固定すべき点 |
 |---|---|---|
-| rulesets / master version set | 実装済み | ruleset 一覧/詳細、version set 詳細、admin 一覧/公開を提供 |
-| run / initial state / route / progression events | 実装済み | 最大 6 体 party、simulation scope、per-member delta を保存し stale 管理を提供 |
-| battle participation / progression projection | 実装済み | battle ごとの participation 更新、route progression 取得 / 再計算、PP warning を提供 |
-| battle quick search | 実装済み | title と敵要約で検索する簡易 quick search |
-| route-wide verification | 実装済み | 初期状態欠落、party/participation 整合性、event sequence gap、enemy group 欠落、arbitrary battle 空、optional battle warning、PP warning を検出 |
-| single-case damage calculation | 実装済み | STAB、中央管理のタイプ相性、急所、追加 modifier、PP warning を使う簡易式 |
-| compare-patterns | 実装済み | base case から move power / attack bonus / extra modifiers を比較する |
-| threshold-search | 実装済み | 初期状態と先頭敵を使う簡易探索 |
-| sharing / comments / diff / revision | 実装済み | snapshot publish、revision publish、comment、構造 diff を提供 |
-| admin import / master maintenance | 実装済み | dry-run / commit job と publish endpoint を提供 |
-| spreadsheet import parser | 未実装 | workbook 名を受ける foundation stub。実ファイル解析は未着手 |
-| share visibility enforcement | 実装済み | `public` のみ匿名 read 可、`private` / `unlisted` は owner 限定 |
+| rulesets / master version set | ruleset と damage / experience / type chart / PP rule を含む version catalog を参照できる | run / snapshot / explanation の再現性 metadata に同じ key 群を流す |
+| run / initial state / route / progression events | 最大 6 体 party、simulation scope、per-member delta を保存し stale 管理を提供する | `progressionFingerprint` を `initialStateRevision`, ordered `progressionEventRevision`, version digest から決定論的に導出する |
+| battle participation / progression projection | battle ごとの `participationMode`, `shareRatio`, manual outcome checklist を保存し route progression を再導出する | `active`, `reserve`, `shared`, `none` の差と PP warning を明示する |
+| battle quick search | 少ない操作で battle 計算画面へ到達する検索導線を提供する | title / enemy / route 文脈を返し、UI 側の deep-link 契約に使えるようにする |
+| route-wide verification | 初期状態欠落、party/participation 整合性、event sequence gap、enemy group 欠落、optional battle warning、PP warning、stale 要因を検出する | stale 判定理由と source references を返す |
+| single-case damage calculation | 中間式、適用順、補正値、乱数レンジ、前提ステータス、使用 ruleset version を返す | damage と progression の version を区別して explanation に出す |
+| calculation presets / pattern tables | user-owned resource として IV range、EV pattern、nature pattern を stable ID 付きで保持する | damage / compare-patterns / threshold-search から参照し、preset 自体も比較・共有起点にできるようにする |
+| compare-patterns | ケース比較結果のみを返す | minimum threshold answer を返さず、threshold-search と責務分離する |
+| threshold-search | `POST /api/calculations/damage:search-thresholds` として専用化し、`hp`, `attack`, `defense`, `specialAttack`, `specialDefense`, `speed` の IV を 0..31 の整数・1 刻みで探索し、`allOf` 条件のみを受け付ける | `solved` / `no-solution` / `multiple-minimal-solutions`, `bestSolution`, `allMinimalSolutions`, `searchedRangeSummary`, `unsatisfiedConditions` を返し、`anyOf` や曖昧な優先順位は validation error とする |
+| sharing / comments / diff / revision | route plan / calculation / comparison / verification を generic source とする immutable snapshot、comment、diff、revision lineage を提供する | metadata key 欠落も差分として扱い、route 順序・前提値・結果差分・share policy 差分・import job 参照差分を比較する |
+| share visibility enforcement | `owner`, `viewer`, `commenter`, `reviser` を区別する | 匿名 read の有無ではなく操作権限単位で policy を固定する |
+| admin import / master maintenance | spreadsheet import の dry-run / commit / publish と audit trail を提供する | row-level errors / warnings / duplicate summary / source metadata / importJobId を返す |
+| spreadsheet import parser | workbook / spreadsheet 内容を解析して versioned master を作る | foundation stub ではなく、受入れ fixture を通せる parser を完了条件に含める |
 
 ## Issue #8: Bootstrap Foundation Top-Level Areas
 
@@ -132,3 +133,7 @@ graph TD
 - `.NET` テンプレートは target framework 差分を除き構成・API・README・検証観点を揃える
 - story damage calculator では `RunInitialState` と ordered `ProgressionEvent` を mutable authority とし、導出 read model を直接更新しない
 - ruleset / master version set は calculation determinism と snapshot reproducibility の境界として扱う
+- snapshot diff は metadata key の存在有無と値の両方を比較対象とし、key 欠落も差分として扱う
+- snapshot metadata は計算に実際に参照した追加 master group と share policy も保持する
+- compare-patterns と threshold-search は責務分離し、最小充足解は threshold-search のみが返す
+- import は dry-run / commit の両方で row-level validation、duplicate handling、audit trail を返す

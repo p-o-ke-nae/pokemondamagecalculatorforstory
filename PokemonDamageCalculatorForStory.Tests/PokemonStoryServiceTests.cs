@@ -34,6 +34,7 @@ public sealed class PokemonStoryServiceTests
                 seededRun.Routes[0].Id,
                 battle.Id,
                 partyMember.PartyMemberId,
+                null,
                 "Spark",
                 65,
                 PokemonType.Electric,
@@ -49,6 +50,59 @@ public sealed class PokemonStoryServiceTests
         CollectionAssert.Contains(result.AppliedModifiers.Select(item => item.Code).ToList(), "critical");
         Assert.AreEqual(4m, result.AppliedModifiers.Single(item => item.Code == "effectiveness").Multiplier);
         Assert.IsNotEmpty(result.Warnings);
+    }
+
+    [TestMethod]
+    public async Task ThresholdSearchAsync_WithUnsupportedConditionMode_Throws()
+    {
+        var service = CreateService(out var seededRun, includeInitialState: true);
+        var battle = seededRun.Routes[0].Battles[0];
+        var partyMember = seededRun.InitialState!.BaselineParty[0];
+
+        await Assert.ThrowsExactlyAsync<ArgumentException>(async () =>
+            await service.ThresholdSearchAsync(
+                new ThresholdSearchRequest(
+                    seededRun.Id,
+                    seededRun.Routes[0].Id,
+                    battle.Id,
+                    partyMember.PartyMemberId,
+                    null,
+                    "Spark",
+                    65,
+                    PokemonType.Electric,
+                    new[] { "attack" },
+                    "anyOf",
+                    new[] { new ThresholdCondition("min", "minimum-damage-at-least", 20) },
+                    Array.Empty<string>()),
+                CancellationToken.None));
+    }
+
+    [TestMethod]
+    public async Task ThresholdSearchAsync_WithSpeedCondition_ReturnsSolved()
+    {
+        var service = CreateService(out var seededRun, includeInitialState: true);
+        var battle = seededRun.Routes[0].Battles[0];
+        var partyMember = seededRun.InitialState!.BaselineParty[0];
+
+        var result = await service.ThresholdSearchAsync(
+            new ThresholdSearchRequest(
+                seededRun.Id,
+                seededRun.Routes[0].Id,
+                battle.Id,
+                partyMember.PartyMemberId,
+                null,
+                "Spark",
+                65,
+                PokemonType.Electric,
+                new[] { "speed" },
+                "allOf",
+                new[] { new ThresholdCondition("speed-check", "action-order-at-least", 40) },
+                Array.Empty<string>()),
+            CancellationToken.None);
+
+        Assert.AreEqual("solved", result.Status);
+        Assert.IsNotNull(result.BestSolution);
+        Assert.IsNotEmpty(result.AllMinimalSolutions);
     }
 
     private static PokemonStoryService CreateService(out RunAggregate seededRun, bool includeInitialState = false, bool negativePp = false)
@@ -81,6 +135,8 @@ public sealed class PokemonStoryServiceTests
             Guid.NewGuid(),
             "Route 103",
             false,
+            includeInitialState ? 1 : 0,
+            Array.Empty<int>(),
             "seed",
             Array.Empty<ProgressionEvent>(),
             new[]
@@ -139,6 +195,7 @@ public sealed class PokemonStoryServiceTests
                 : null,
             new[] { route },
             Array.Empty<EnemyGroupDefinition>(),
+            Array.Empty<CalculationPreset>(),
             DateTimeOffset.UtcNow,
             DateTimeOffset.UtcNow);
         route = route with
