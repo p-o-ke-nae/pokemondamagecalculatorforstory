@@ -24,7 +24,7 @@
 |---|---|---|
 | Domain / service unit tests | Service / Unit | verification issue 生成、中央管理 type chart、PP warning 付き damage calculation、threshold 判定、stale fingerprint 導出、metadata diff 判定 |
 | Scenario API integration | API / Integration | ruleset → run → initial state(最大 6 体 party) → route → enemy group → battle → participation → progression → verify → calculations の E2E |
-| Swagger / OpenAPI regression | API / Integration | `swagger.json` に operation summary、ユースケース、入力例、正規化済み path metadata が公開されることを固定する |
+| Swagger / OpenAPI regression | API / Integration | `swagger.json` に operation summary、ユースケース、入力例、canonical path と互換 alias の区別が公開されることを固定する |
 | Preset / pattern table integration | API / Integration | preset stable ID、IV range、EV pattern、nature pattern の保存と compare / threshold 参照の E2E |
 | Share / collaboration integration | API / Integration | generic source snapshot publish、viewer/commenter/reviser policy、revision lineage、metadata diff、snapshot replay の E2E |
 | Admin import integration | API / Integration | dry-run / commit、row-level error / warning、duplicate summary、master version publish、audit trail の E2E |
@@ -41,10 +41,10 @@
 | Quick search | keyword 検索で battle hit を返す | Integration |
 | Route verification | missing initial state issue、participation 不整合、stale metadata と正常系 verification を返す | Unit / Integration |
 | Damage calculation | damage range、中間式、centralized type effectiveness、PP warning、source references、使用 version を返す | Unit / Integration |
-| Swagger / OpenAPI documentation | Testing 環境で `swagger.json` を取得でき、operation summary / description にユースケースと入力例が含まれる | Integration |
+| Swagger / OpenAPI documentation | Testing 環境で `swagger.json` を取得でき、operation summary / description にユースケースと入力例が含まれ、compare-patterns / threshold-search では canonical path と互換 alias の区別が見える | Integration |
 | Preset / pattern table | IV range input と EV / nature pattern table を stable ID 付き resource として保存・参照できる | Integration |
-| Compare-patterns | ケース比較結果のみを返し、minimum threshold answer を返さない | Integration |
-| Threshold-search | `hp`, `attack`, `defense`, `specialAttack`, `specialDefense`, `speed` の IV を 0..31 の整数・1 刻みで探索し、`minimum-damage-at-least`, `maximum-damage-at-most`, `action-order-at-least` を含む `allOf` 条件に対して `solved` / `no-solution` / `multiple-minimal-solutions` と `bestSolution` / `allMinimalSolutions` / `searchedRangeSummary` / `unsatisfiedConditions` を返す。`anyOf` や priority 指定は validation error | Unit / Integration |
+| Compare-patterns | canonical path `POST /api/calculations/compare-patterns` を主契約として公開しつつ、互換 alias `POST /api/calculations/damage:compare-patterns` でも同一結果を返す。ケース比較結果のみを返し、minimum threshold answer を返さない | Integration |
+| Threshold-search | canonical path `POST /api/calculations/threshold-search` を主契約として公開しつつ、互換 alias `POST /api/calculations/damage:search-thresholds` でも同一探索結果を返す。`hp`, `attack`, `defense`, `specialAttack`, `specialDefense`, `speed` の IV を 0..31 の整数・1 刻みで探索し、`minimum-damage-at-least`, `maximum-damage-at-most`, `action-order-at-least` を含む `allOf` 条件に対して `solved` / `no-solution` / `multiple-minimal-solutions` と `bestSolution` / `allMinimalSolutions` / `searchedRangeSummary` / `unsatisfiedConditions` を返す。`anyOf` や priority 指定は validation error | Unit / Integration |
 | Progression events | `battle-result`, `item-use`, `rare-candy`, `pp-restore`, `species-change`, `move-change` を route 再計算に反映する | Unit / Integration |
 | Sharing | route plan / calculation / comparison / verification を generic source として share 作成でき、viewer/commenter/reviser policy、comment 追加、revision 公開、metadata diff、share policy diff、snapshot replay が通る | Integration |
 | Admin authorization | member は admin import を拒否される | Integration |
@@ -70,14 +70,14 @@
 |---|---|
 | `PDC-API-01` | ruleset 一覧取得から run 作成までの foundation flow が通る |
 | `PDC-API-02` | initial state、route、enemy group、battle、participation の登録後に quick search と progression / route verification が成功する |
-| `PDC-API-03` | damage / compare-patterns / threshold-search が run owner 認可の下で成功し、threshold-search は最小充足解専用 shape を返す |
+| `PDC-API-03` | damage / compare-patterns / threshold-search が run owner 認可の下で成功し、`/api/calculations/compare-patterns` と `/api/calculations/threshold-search` を canonical path として扱う。互換 alias でも同一レスポンス契約を維持し、threshold-search は最小充足解専用 shape を返す |
 | `PDC-API-04` | PP 不足 warning が progression に現れても damage calculation は継続できる |
 | `PDC-API-05` | preset / pattern table は stable ID で保存され、damage / compare / threshold の参照元として利用できる |
 | `PDC-API-06` | route plan / calculation / comparison / verification の各 generic source を share でき、viewer/commenter/reviser policy、comment、revision publish、metadata diff、share policy diff、snapshot replay が成功する |
 | `PDC-API-07` | admin import は member を拒否し、admin では dry-run / commit と row-level validation / duplicate summary / audit trail が取得できる |
 | `PDC-API-08` | route reorder / event update 後に stale 判定と `progressionFingerprint` 更新が確認できる |
 | `PDC-API-09` | `item-use` / `move-change` event 登録後に progression と damage 入力補助が更新される |
-| `PDC-API-10` | Testing 環境で `swagger/v1/swagger.json` を取得でき、`POST /api/runs` などの operation summary / description にユースケースと入力例が含まれる |
+| `PDC-API-10` | Testing 環境で `swagger/v1/swagger.json` を取得でき、`POST /api/runs` などの operation summary / description にユースケースと入力例が含まれ、compare-patterns / threshold-search では canonical path と互換 alias の区別が確認できる |
 
 ## 4. Minimum Non-Gaps for Phase 3
 

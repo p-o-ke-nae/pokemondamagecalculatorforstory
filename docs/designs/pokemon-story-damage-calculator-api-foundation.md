@@ -29,7 +29,7 @@
 | AuthZ | `/api/runs*`, `/api/routes*`, `/api/calculations*` は所有者必須。share は `owner`, `viewer`, `commenter`, `reviser` の policy で read/comment/revise を分離し、`/api/admin*` は `Administrator` ロール必須 |
 | Persistence | EF Core。通常は SQL Server、テストや指定時は InMemory |
 | Startup behavior | production 以外は migration 試行後に seed を投入。Development / Testing 環境では Swagger UI と `/swagger/v1/swagger.json` を公開する |
-| OpenAPI metadata | Swagger / OpenAPI の operation summary / description にはユースケースと入力例を含め、公開 path は OpenAPI 上で正規化して扱う |
+| OpenAPI metadata | Swagger / OpenAPI の operation summary / description にはユースケースと入力例を含め、公開 path は OpenAPI 上で正規 path と互換 alias を区別して扱う |
 | Seed data | foundation ruleset と published master version set を投入し、version metadata 契約の雛形を提供する |
 
 ## 2. Module Boundaries
@@ -119,12 +119,19 @@ flowchart LR
 | route verification | `POST /api/routes/{id}:verify`, `GET /api/routes/{id}/verification` | Run owner | progression warning も取り込む |
 | damage | `POST /api/calculations/damage` | Run owner | STAB、中央管理のタイプ相性、急所、追加 modifiers、PP warning を適用 |
 | calculation presets / pattern tables | `GET/POST /api/presets`, `GET/PUT /api/presets/{presetId}` | Run owner | preset は stable ID を持ち、IV ranges、EV patterns、nature patterns を保持する |
-| compare-patterns | `POST /api/calculations/damage:compare-patterns` | Run owner | ケース比較結果のみを返し、minimum threshold answer は返さない |
-| threshold-search | `POST /api/calculations/damage:search-thresholds` | Run owner | `hp`, `attack`, `defense`, `specialAttack`, `specialDefense`, `speed` の IV を 0..31 の整数・1 刻みで探索し、`allOf` 条件に対して `solved` / `no-solution` / `multiple-minimal-solutions` と `bestSolution` / `allMinimalSolutions` / `searchedRangeSummary` / `unsatisfiedConditions` を返す。`minimum-damage-at-least`, `maximum-damage-at-most`, `action-order-at-least` などの条件を扱い、`anyOf` や priority 指定は validation error |
+| compare-patterns | `POST /api/calculations/compare-patterns` | Run owner | 正規 path。互換 alias として `POST /api/calculations/damage:compare-patterns` も公開する。ケース比較結果のみを返し、minimum threshold answer は返さない |
+| threshold-search | `POST /api/calculations/threshold-search` | Run owner | 正規 path。互換 alias として `POST /api/calculations/damage:search-thresholds` も公開する。`hp`, `attack`, `defense`, `specialAttack`, `specialDefense`, `speed` の IV を 0..31 の整数・1 刻みで探索し、`allOf` 条件に対して `solved` / `no-solution` / `multiple-minimal-solutions` と `bestSolution` / `allMinimalSolutions` / `searchedRangeSummary` / `unsatisfiedConditions` を返す。`minimum-damage-at-least`, `maximum-damage-at-most`, `action-order-at-least` などの条件を扱い、`anyOf` や priority 指定は validation error |
 | shares | `POST /api/shares/snapshots`, `GET /api/shares/{shareId}` | Write: Run owner / Read: policy-based | snapshot は `sourceType`, `sourceId`, fixed version set, `importJobIds[]`, digest を固定し、viewer 権限で read できる |
 | comments / revisions / diff | `GET/POST /api/shares/{shareId}/comments`, `POST /api/shares/{shareId}:diff`, `POST /api/shares/{shareId}:revise`, `GET /api/shares/{shareId}/revisions` | Comment: commenter / Revise: reviser / Diff: viewer 以上 | diff は route 順序、前提値、結果差分、share policy 差分、metadata key 欠落を比較対象に含める |
 | admin import | `POST /api/admin/imports`, `GET /api/admin/imports/{id}` | Admin | `mode` と `sourceType` で dry-run / commit を切り替え、row-level validation と duplicate summary を返す |
 | admin master maintenance | `GET /api/admin/master-version-sets`, `POST /api/admin/master-version-sets/{id}:publish` | Admin | publish は `IsPublished=true` へ更新する |
+
+### 4.1 Canonical Paths and Compatibility Aliases
+
+| Capability | Canonical path | Compatibility alias | Documentation policy |
+|---|---|---|---|
+| compare-patterns | `POST /api/calculations/compare-patterns` | `POST /api/calculations/damage:compare-patterns` | Swagger / 設計 docs では canonical path を主表記とし、alias は既存クライアント互換として併記する |
+| threshold-search | `POST /api/calculations/threshold-search` | `POST /api/calculations/damage:search-thresholds` | Swagger / 設計 docs では canonical path を主表記とし、alias は既存クライアント互換として併記する |
 
 ## 5. Core Resource Snapshot
 
