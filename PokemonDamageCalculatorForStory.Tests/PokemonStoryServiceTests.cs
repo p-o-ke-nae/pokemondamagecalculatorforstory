@@ -105,6 +105,80 @@ public sealed class PokemonStoryServiceTests
         Assert.IsNotEmpty(result.AllMinimalSolutions);
     }
 
+    [TestMethod]
+    public async Task ThresholdSearchAsync_UsesProjectedPartyStateAfterProgressionEvents()
+    {
+        var service = CreateService(out var seededRun, includeInitialState: true);
+        var route = seededRun.Routes[0];
+        var battle = route.Battles[0];
+        var partyMember = seededRun.InitialState!.BaselineParty[0];
+
+        var before = await service.ThresholdSearchAsync(
+            new ThresholdSearchRequest(
+                seededRun.Id,
+                route.Id,
+                battle.Id,
+                partyMember.PartyMemberId,
+                null,
+                "Body Slam",
+                65,
+                PokemonType.Normal,
+                new[] { "attack" },
+                "allOf",
+                new[] { new ThresholdCondition("damage-check", "minimum-damage-at-least", 35) },
+                Array.Empty<string>()),
+            CancellationToken.None);
+
+        Assert.AreEqual("no-solution", before.Status);
+
+        await service.AddProgressionEventAsync(
+            route.Id,
+            new ProgressionEvent(
+                Guid.Empty,
+                0,
+                "rare-candy",
+                "Level boost",
+                null,
+                0,
+                "item",
+                new[]
+                {
+                    new PartyProgressionDelta(
+                        partyMember.PartyMemberId,
+                        0,
+                        new StatValues(0, 0, 0, 0, 0, 0),
+                        Array.Empty<MovePpDelta>(),
+                        20,
+                        "Raichu",
+                        null,
+                        null,
+                        "Light Ball",
+                        new[] { new MoveState("Body Slam", 15, 15) },
+                        "threshold setup")
+                },
+                0),
+            CancellationToken.None);
+
+        var after = await service.ThresholdSearchAsync(
+            new ThresholdSearchRequest(
+                seededRun.Id,
+                route.Id,
+                battle.Id,
+                partyMember.PartyMemberId,
+                null,
+                "Body Slam",
+                65,
+                PokemonType.Normal,
+                new[] { "attack" },
+                "allOf",
+                new[] { new ThresholdCondition("damage-check", "minimum-damage-at-least", 35) },
+                Array.Empty<string>()),
+            CancellationToken.None);
+
+        Assert.AreEqual("solved", after.Status);
+        Assert.IsNotNull(after.BestSolution);
+    }
+
     private static PokemonStoryService CreateService(out RunAggregate seededRun, bool includeInitialState = false, bool negativePp = false)
     {
         var ruleset = new Ruleset(Guid.Parse("11111111-1111-1111-1111-111111111111"), "gen3-emerald-story", "Gen3", "Pokemon Emerald", "story-v1", "active", "foundation");

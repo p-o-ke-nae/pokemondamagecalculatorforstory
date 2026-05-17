@@ -17,7 +17,7 @@
 
 | Slice | Issue | Phase / Step | Status |
 |---|---|---|---|
-| Pokemon story damage calculator foundation | #1 | Phase 2 / Step 2.3 | design contract for review |
+| Pokemon story damage calculator foundation | #1 | Phase 3 / Step 3.11 | implementation-aligned |
 | Bootstrap foundation redesign | #8 | Phase 3 / Step 3.4.5 | implementation-aligned |
 
 ## ドキュメント境界

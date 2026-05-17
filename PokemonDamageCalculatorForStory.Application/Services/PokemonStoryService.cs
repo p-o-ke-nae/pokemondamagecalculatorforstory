@@ -689,11 +689,12 @@ public sealed class PokemonStoryService
             ?? throw new KeyNotFoundException("route が見つかりません。");
         var battle = route.Battles.SingleOrDefault(item => item.Id == request.BattleId)
             ?? throw new KeyNotFoundException("battle が見つかりません。");
+        var ruleset = await _rulesetRepository.FindRulesetAsync(run.RulesetId, cancellationToken)
+            ?? throw new KeyNotFoundException("ruleset が見つかりません。");
         var defender = ResolveBattleEnemies(run, battle).FirstOrDefault()
             ?? throw new InvalidOperationException("battle に敵情報がありません。");
-        var projection = await ProjectRouteAsync(run, route, cancellationToken);
         var preset = ResolvePreset(run, request.PresetId);
-        var attacker = ResolveProjectedAttacker(run, projection, request.PlayerPartyMemberId);
+        var attacker = _progressionProjector.ResolveProjectedPartyMember(run, route, ruleset, request.PlayerPartyMemberId);
         var solutions = new List<ThresholdSolution>();
         var unsatisfiedConditionKeys = new HashSet<string>(request.Conditions.Select(item => item.ConditionKey), StringComparer.Ordinal);
         foreach (var candidateIvs in EnumerateThresholdIvs(attacker.IndividualValues, normalizedStats, 0))

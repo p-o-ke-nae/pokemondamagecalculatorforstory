@@ -2,21 +2,21 @@
 
 ## 概要
 
-このドキュメントは Issue #1 の story damage calculator foundation に対する Phase 3 の必須テスト戦略をまとめるものです。承認済み仕様を基準に、何をユニットテストで固定し、何を API / E2E で通し、どの不足が残ってはいけないかを整理します。
+このドキュメントは Issue #1 の story damage calculator foundation に対する Phase 3 のテスト戦略と実装追従のカバレッジ整理をまとめるものです。承認済み仕様を基準に、何をユニットテストで固定し、何を API / E2E で通し、現行実装がどこまで追従しているかを整理します。
 
 | 項目 | 内容 |
 |---|---|
 | 対象 Issue | #1 |
-| Phase / Step | Phase 2 / Step 2.3 |
+| Phase / Step | Phase 3 / Step 3.11 |
 | 対象設計 | [Pokemon Story Damage Calculator API Foundation](../designs/pokemon-story-damage-calculator-api-foundation.md) |
-| 主目的 | 承認済み API / データ契約を満たす検証戦略を固定する |
+| 主目的 | 承認済み API / データ契約に対する現行テスト戦略とカバレッジを固定する |
 
 ## Status
 
 | Field | Value |
 |---|---|
 | Document type | test strategy |
-| Detail level | required coverage for Phase 3 |
+| Detail level | implementation-aligned coverage for Phase 3 |
 
 ## 1. Required Test Inventory
 

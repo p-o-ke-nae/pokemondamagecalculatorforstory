@@ -195,6 +195,76 @@ public sealed class StoryApiTests
         route = await eventResponse.Content.ReadFromJsonAsync<RoutePlan>();
         Assert.IsNotNull(route);
         Assert.IsNotEmpty(route.OrderedProgressionEventRevisions);
+        var firstFingerprint = route.ProgressionFingerprint;
+        var firstEvent = route.Events.Single();
+
+        var moveChangeResponse = await client.PostAsJsonAsync($"/api/routes/{route.Id}/events", new
+        {
+            eventType = "move-change",
+            summary = "Learn Thunderbolt",
+            linkedBattleId = (Guid?)null,
+            moneyDelta = 0,
+            sourceReference = "tm24",
+            partyDeltas = new object[]
+            {
+                new
+                {
+                    partyMemberId = pikachuId,
+                    experienceDelta = 0,
+                    effortValueDelta = new { hp = 0, attack = 0, defense = 0, specialAttack = 0, specialDefense = 0, speed = 0 },
+                    ppDeltas = Array.Empty<object>(),
+                    rareCandyLevels = 1,
+                    speciesOverride = (string?)null,
+                    abilityOverride = (string?)null,
+                    natureOverride = (string?)null,
+                    heldItemOverride = "Quick Claw",
+                    replaceMoves = new[] { new { moveName = "Thunderbolt", maxPp = 15, currentPp = 15 } },
+                    notes = "TM update"
+                }
+            }
+        });
+        moveChangeResponse.EnsureSuccessStatusCode();
+        route = await moveChangeResponse.Content.ReadFromJsonAsync<RoutePlan>();
+        Assert.IsNotNull(route);
+        Assert.AreNotEqual(firstFingerprint, route.ProgressionFingerprint);
+
+        var secondEvent = route.Events.Single(item => item.EventType == "move-change");
+        var updateEventResponse = await client.PutAsJsonAsync($"/api/routes/{route.Id}/events/{firstEvent.Id}", new
+        {
+            eventType = "item-use",
+            summary = "May 1 clear updated",
+            linkedBattleId = battle.Id,
+            moneyDelta = 300,
+            sourceReference = "story",
+            partyDeltas = new object[]
+            {
+                new
+                {
+                    partyMemberId = pikachuId,
+                    experienceDelta = 0,
+                    effortValueDelta = new { hp = 0, attack = 0, defense = 0, specialAttack = 0, specialDefense = 0, speed = 0 },
+                    ppDeltas = new[] { new { moveName = "Spark", delta = -3 } },
+                    rareCandyLevels = 0,
+                    speciesOverride = (string?)null,
+                    abilityOverride = (string?)null,
+                    natureOverride = (string?)null,
+                    heldItemOverride = "Magnet",
+                    replaceMoves = (object[]?)null,
+                    notes = "Spark three times"
+                }
+            }
+        });
+        updateEventResponse.EnsureSuccessStatusCode();
+        route = await updateEventResponse.Content.ReadFromJsonAsync<RoutePlan>();
+        Assert.IsNotNull(route);
+        Assert.IsTrue(route.Events.Single(item => item.Id == firstEvent.Id).Revision > firstEvent.Revision);
+
+        var reorderResponse = await client.PostAsJsonAsync($"/api/routes/{route.Id}:reorder", new { eventIds = new[] { secondEvent.Id, firstEvent.Id } });
+        reorderResponse.EnsureSuccessStatusCode();
+        route = await reorderResponse.Content.ReadFromJsonAsync<RoutePlan>();
+        Assert.IsNotNull(route);
+        CollectionAssert.AreEqual(new[] { secondEvent.Id, firstEvent.Id }, route.Events.OrderBy(item => item.Sequence).Select(item => item.Id).ToArray());
+        Assert.HasCount(2, route.OrderedProgressionEventRevisions);
 
         var searchHits = await client.GetFromJsonAsync<List<BattleSearchHit>>($"/api/runs/{run.Id}/battles:search?keyword=Wingull");
         Assert.IsNotNull(searchHits);
@@ -203,8 +273,9 @@ public sealed class StoryApiTests
         var progression = await client.GetFromJsonAsync<RouteProgressionProjection>($"/api/routes/{route.Id}/progression");
         Assert.IsNotNull(progression);
         Assert.HasCount(2, progression.PartyMembers);
-        Assert.AreEqual("active", progression.PartyMembers.Single(item => item.PartyMemberId == pikachuId).SimulationScope);
-        Assert.AreEqual("baseline-only", progression.PartyMembers.Single(item => item.PartyMemberId == bulbasaurId).SimulationScope);
+        Assert.AreEqual("shared", progression.PartyMembers.Single(item => item.PartyMemberId == pikachuId).SimulationScope);
+        Assert.AreEqual("reserve", progression.PartyMembers.Single(item => item.PartyMemberId == bulbasaurId).SimulationScope);
+        CollectionAssert.Contains(progression.PartyMembers.Single(item => item.PartyMemberId == pikachuId).Moves.Select(item => item.MoveName).ToList(), "Thunderbolt");
 
         var recalculateResponse = await client.PostAsync($"/api/routes/{route.Id}:recalculate", content: null);
         recalculateResponse.EnsureSuccessStatusCode();
@@ -269,7 +340,7 @@ public sealed class StoryApiTests
         damageResponse.EnsureSuccessStatusCode();
         var damage = await damageResponse.Content.ReadFromJsonAsync<DamageCalculationResult>();
         Assert.IsNotNull(damage);
-        Assert.IsLessThanOrEqualTo(damage.MinimumDamage, damage.MaximumDamage);
+        Assert.IsTrue(damage.MinimumDamage <= damage.MaximumDamage);
         Assert.AreEqual(4m, damage.AppliedModifiers.Single(item => item.Code == "effectiveness").Multiplier);
         Assert.IsTrue(damage.SourceReferences.Any(item => item.ReferenceType == "calculation-preset"));
 
@@ -456,6 +527,32 @@ public sealed class StoryApiTests
         Assert.AreEqual(share.ProgressionFingerprint, snapshotDocument.ProgressionFingerprint);
         Assert.AreEqual(share.CalculationInputDigest, snapshotDocument.CalculationInputDigest);
         Assert.AreEqual(share.CalculationOutputDigest, snapshotDocument.CalculationOutputDigest);
+
+        var calculationShareResponse = await client.PostAsJsonAsync("/api/shares/snapshots", new
+        {
+            runId = run.Id,
+            sourceType = "calculation",
+            sourceId = battle.Id,
+            visibility = "public",
+            allowedRoles = new[] { "viewer", "commenter", "reviser" },
+            summary = "calculation share",
+            frozenInput = new { battleId = battle.Id, source = "calculation" },
+            frozenOutput = new { result = "damage" }
+        });
+        calculationShareResponse.EnsureSuccessStatusCode();
+
+        var verificationShareResponse = await client.PostAsJsonAsync("/api/shares/snapshots", new
+        {
+            runId = run.Id,
+            sourceType = "verification",
+            sourceId = route.Id,
+            visibility = "public",
+            allowedRoles = new[] { "viewer", "commenter", "reviser" },
+            summary = "verification share",
+            frozenInput = new { routeId = route.Id, source = "verification" },
+            frozenOutput = new { result = "route-verification" }
+        });
+        verificationShareResponse.EnsureSuccessStatusCode();
 
         var deterministicShareResponse = await client.PostAsJsonAsync("/api/shares/snapshots", new
         {

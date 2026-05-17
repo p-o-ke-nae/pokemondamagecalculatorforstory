@@ -24,49 +24,8 @@ public sealed class StoryProgressionProjector
                 BuildSourceReferences(ruleset, versionSet));
         }
 
-        var partyState = run.InitialState.BaselineParty.ToDictionary(
-            member => member.PartyMemberId,
-            ClonePartyMember);
         var warnings = new List<VerificationMessage>();
-
-        foreach (var progressionEvent in route.Events.OrderBy(item => item.Sequence))
-        {
-            var battle = progressionEvent.LinkedBattleId.HasValue
-                ? route.Battles.SingleOrDefault(item => item.Id == progressionEvent.LinkedBattleId.Value)
-                : null;
-            var derivedBattleDeltas = battle is null
-                ? new Dictionary<Guid, PartyProgressionDelta>()
-                : BuildBattleDerivedDeltas(run, battle, ruleset);
-
-            foreach (var partyDelta in progressionEvent.PartyDeltas)
-            {
-                if (!partyState.TryGetValue(partyDelta.PartyMemberId, out var member))
-                {
-                    warnings.Add(new VerificationMessage("party.missing", $"event '{progressionEvent.Summary}' が存在しない party member を参照しています。", progressionEvent.LinkedBattleId));
-                    continue;
-                }
-
-                derivedBattleDeltas.TryGetValue(partyDelta.PartyMemberId, out var derivedDelta);
-                member = ApplyDelta(member, derivedDelta);
-                member = ApplyDelta(member, partyDelta);
-                partyState[partyDelta.PartyMemberId] = member;
-            }
-
-            foreach (var (partyMemberId, derivedDelta) in derivedBattleDeltas)
-            {
-                if (progressionEvent.PartyDeltas.Any(item => item.PartyMemberId == partyMemberId))
-                {
-                    continue;
-                }
-
-                if (!partyState.TryGetValue(partyMemberId, out var member))
-                {
-                    continue;
-                }
-
-                partyState[partyMemberId] = ApplyDelta(member, derivedDelta);
-            }
-        }
+        var partyState = BuildPartyState(run, route, ruleset, warnings);
 
         var projections = partyState.Values
             .OrderBy(item => item.Slot)
@@ -87,7 +46,7 @@ public sealed class StoryProgressionProjector
                     member.Experience,
                     member.EffortValues,
                     member.Moves,
-                    isSimulated ? "active" : "baseline-only",
+                    DetermineSimulationScope(route, member, isSimulated),
                     member.IsBattleSimulatorEnabled,
                     memberWarnings);
             })
@@ -100,6 +59,25 @@ public sealed class StoryProgressionProjector
             warnings,
             route.ProgressionFingerprint,
             BuildSourceReferences(ruleset, versionSet));
+    }
+
+    /// <summary>route 時点の再導出済み party member を返します。</summary>
+    public PartyMemberDefinition ResolveProjectedPartyMember(RunAggregate run, RoutePlan route, Ruleset ruleset, Guid? partyMemberId)
+    {
+        if (run.InitialState is null)
+        {
+            throw new InvalidOperationException("初期状態が未設定です。");
+        }
+
+        var partyState = BuildPartyState(run, route, ruleset, warnings: null);
+        var memberId = partyMemberId
+            ?? route.SimulatedPartyMemberIds
+                .Where(item => partyState.ContainsKey(item))
+                .Select(item => (Guid?)item)
+                .FirstOrDefault()
+            ?? partyState.Values.FirstOrDefault(item => item.IsBattleSimulatorEnabled)?.PartyMemberId
+            ?? partyState.Values.OrderBy(item => item.Slot).First().PartyMemberId;
+        return partyState[memberId];
     }
 
     /// <summary>指定ポケモンの現在 PP 不足警告を取得します。</summary>
@@ -138,6 +116,80 @@ public sealed class StoryProgressionProjector
             Typing = member.Typing with { },
             Moves = member.Moves.Select(move => move with { }).ToArray()
         };
+
+    private static Dictionary<Guid, PartyMemberDefinition> BuildPartyState(RunAggregate run, RoutePlan route, Ruleset ruleset, ICollection<VerificationMessage>? warnings)
+    {
+        var partyState = run.InitialState!.BaselineParty.ToDictionary(
+            member => member.PartyMemberId,
+            ClonePartyMember);
+
+        foreach (var progressionEvent in route.Events.OrderBy(item => item.Sequence))
+        {
+            var battle = progressionEvent.LinkedBattleId.HasValue
+                ? route.Battles.SingleOrDefault(item => item.Id == progressionEvent.LinkedBattleId.Value)
+                : null;
+            var derivedBattleDeltas = battle is null
+                ? new Dictionary<Guid, PartyProgressionDelta>()
+                : BuildBattleDerivedDeltas(run, battle, ruleset);
+
+            foreach (var partyDelta in progressionEvent.PartyDeltas)
+            {
+                if (!partyState.TryGetValue(partyDelta.PartyMemberId, out var member))
+                {
+                    warnings?.Add(new VerificationMessage("party.missing", $"event '{progressionEvent.Summary}' が存在しない party member を参照しています。", progressionEvent.LinkedBattleId));
+                    continue;
+                }
+
+                derivedBattleDeltas.TryGetValue(partyDelta.PartyMemberId, out var derivedDelta);
+                member = ApplyDelta(member, derivedDelta);
+                member = ApplyDelta(member, partyDelta);
+                partyState[partyDelta.PartyMemberId] = member;
+            }
+
+            foreach (var (partyMemberId, derivedDelta) in derivedBattleDeltas)
+            {
+                if (progressionEvent.PartyDeltas.Any(item => item.PartyMemberId == partyMemberId))
+                {
+                    continue;
+                }
+
+                if (!partyState.TryGetValue(partyMemberId, out var member))
+                {
+                    continue;
+                }
+
+                partyState[partyMemberId] = ApplyDelta(member, derivedDelta);
+            }
+        }
+
+        return partyState;
+    }
+
+    private static string DetermineSimulationScope(RoutePlan route, PartyMemberDefinition member, bool isSimulated)
+    {
+        var participationModes = route.Battles
+            .SelectMany(item => item.Participations)
+            .Where(item => item.PartyMemberId == member.PartyMemberId)
+            .Select(item => item.ParticipationMode.Trim().ToLowerInvariant())
+            .ToArray();
+
+        if (participationModes.Contains("shared", StringComparer.Ordinal))
+        {
+            return "shared";
+        }
+
+        if (participationModes.Contains("active", StringComparer.Ordinal))
+        {
+            return "active";
+        }
+
+        if (participationModes.Contains("reserve", StringComparer.Ordinal))
+        {
+            return "reserve";
+        }
+
+        return isSimulated ? "active" : "none";
+    }
 
     private static PartyMemberDefinition ApplyDelta(PartyMemberDefinition member, PartyProgressionDelta? delta)
     {

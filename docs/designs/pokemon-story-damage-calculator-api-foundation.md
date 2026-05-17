@@ -2,13 +2,13 @@
 
 ## 概要
 
-このドキュメントは Issue #1 の Pokemon story damage calculator に対する承認済み API / データ契約をまとめるものです。Phase 2 の設計成果物として、authority model、API surface、share/import 再現性契約、テストで固定すべき境界を示します。
+このドキュメントは Issue #1 の Pokemon story damage calculator に対する承認済み API / データ契約をまとめるものです。Phase 3 実装に追従した設計契約として、authority model、API surface、share/import 再現性契約、テストで固定すべき境界を示します。
 
 | 項目 | 内容 |
 |---|---|
 | 対象 Issue | #1 |
-| Phase / Step | Phase 2 / Step 2.3 |
-| 主目的 | 承認済み仕様を満たす API / データ契約を固定する |
+| Phase / Step | Phase 3 / Step 3.11 |
+| 主目的 | 実装済み API / データ契約を承認済み仕様と照合できる状態で固定する |
 | 関連アーキテクチャ | [Architecture Overview](../architecture.md) |
 | 関連テスト | [Pokemon Story Damage Calculator Foundation Test Plan](../tests/pokemon-story-damage-calculator-foundation-test-plan.md) |
 
@@ -18,7 +18,7 @@
 |---|---|
 | Document type | design contract |
 | Detail level | Phase 3 completion criteria ready |
-| Implementation stance | approved-spec aligned |
+| Implementation stance | implementation-aligned |
 
 ## 1. Design Contract Snapshot
 
@@ -101,7 +101,7 @@ flowchart LR
 - compare-patterns は minimum threshold answer を返さない
 - snapshot metadata には、実計算で参照した追加 master group と share policy も固定する
 
-## 4. Planned API Surface
+## 4. Implemented API Surface
 
 | Capability | Endpoint | Auth | Notes |
 |---|---|---|---|
