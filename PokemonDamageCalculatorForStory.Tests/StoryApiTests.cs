@@ -269,7 +269,7 @@ public sealed class StoryApiTests
         damageResponse.EnsureSuccessStatusCode();
         var damage = await damageResponse.Content.ReadFromJsonAsync<DamageCalculationResult>();
         Assert.IsNotNull(damage);
-        Assert.IsLessThanOrEqualTo(damage.MaximumDamage, damage.MinimumDamage);
+        Assert.IsLessThanOrEqualTo(damage.MinimumDamage, damage.MaximumDamage);
         Assert.AreEqual(4m, damage.AppliedModifiers.Single(item => item.Code == "effectiveness").Multiplier);
         Assert.IsTrue(damage.SourceReferences.Any(item => item.ReferenceType == "calculation-preset"));
 
