@@ -10,11 +10,11 @@ public class AppDbContext : DbContext
     {
     }
 
-    internal DbSet<PersistedRuleset> Rulesets => Set<PersistedRuleset>();
-    internal DbSet<PersistedMasterVersionSet> MasterVersionSets => Set<PersistedMasterVersionSet>();
-    internal DbSet<PersistedRun> Runs => Set<PersistedRun>();
-    internal DbSet<PersistedShare> Shares => Set<PersistedShare>();
-    internal DbSet<PersistedImportJob> ImportJobs => Set<PersistedImportJob>();
+    public DbSet<PersistedRuleSet> PersistedRuleSets => Set<PersistedRuleSet>();
+    public DbSet<PersistedRun> PersistedRuns => Set<PersistedRun>();
+    public DbSet<PersistedBattle> PersistedBattles => Set<PersistedBattle>();
+    public DbSet<PersistedOwnPokemonSnapshot> PersistedOwnPokemonSnapshots => Set<PersistedOwnPokemonSnapshot>();
+    public DbSet<PersistedCalculationResult> PersistedCalculationResults => Set<PersistedCalculationResult>();
     public DbSet<PersistedUserAuthorizationInfo> PersistedUserAuthorizationInfos => Set<PersistedUserAuthorizationInfo>();
     public DbSet<PersistedUserPermission> PersistedUserPermissions => Set<PersistedUserPermission>();
 
@@ -22,111 +22,72 @@ public class AppDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        modelBuilder.Entity<PersistedRuleset>(entity =>
+        modelBuilder.Entity<PersistedRuleSet>(entity =>
         {
             entity.HasKey(e => e.Id);
-
-            entity.Property(e => e.Slug)
-                .HasMaxLength(128)
-                .IsRequired();
-
-            entity.Property(e => e.PayloadJson)
-                .IsRequired();
-
-            entity.ToTable("Rulesets");
-        });
-
-        modelBuilder.Entity<PersistedMasterVersionSet>(entity =>
-        {
-            entity.HasKey(e => e.Id);
-
-            entity.Property(e => e.PayloadJson)
-                .IsRequired();
-
-            entity.ToTable("MasterVersionSets");
+            entity.Property(e => e.Slug).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Title).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Version).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.Status).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.Summary).HasMaxLength(500);
+            entity.HasIndex(e => e.Slug).IsUnique();
+            entity.ToTable("RuleSets");
         });
 
         modelBuilder.Entity<PersistedRun>(entity =>
         {
             entity.HasKey(e => e.Id);
-
-            entity.Property(e => e.OwnerUserId)
-                .HasMaxLength(256)
-                .IsRequired();
-
-            entity.Property(e => e.PayloadJson)
-                .IsRequired();
-
+            entity.Property(e => e.OwnerUserId).HasMaxLength(128).IsRequired();
+            entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Status).HasMaxLength(50).IsRequired();
             entity.ToTable("Runs");
         });
 
-        modelBuilder.Entity<PersistedShare>(entity =>
+        modelBuilder.Entity<PersistedBattle>(entity =>
         {
             entity.HasKey(e => e.Id);
-
-            entity.Property(e => e.OwnerUserId)
-                .HasMaxLength(256)
-                .IsRequired();
-
-            entity.Property(e => e.PayloadJson)
-                .IsRequired();
-
-            entity.ToTable("Shares");
+            entity.Property(e => e.EnemyPokemon).HasMaxLength(100).IsRequired();
+            entity.ToTable("Battles");
         });
 
-        modelBuilder.Entity<PersistedImportJob>(entity =>
+        modelBuilder.Entity<PersistedOwnPokemonSnapshot>(entity =>
         {
             entity.HasKey(e => e.Id);
+            entity.Property(e => e.Species).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Stats).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.EVs).HasMaxLength(500).IsRequired();
+            entity.ToTable("OwnPokemonSnapshots");
+        });
 
-            entity.Property(e => e.SubmittedByUserId)
-                .HasMaxLength(256)
-                .IsRequired();
-
-            entity.Property(e => e.PayloadJson)
-                .IsRequired();
-
-            entity.ToTable("ImportJobs");
+        modelBuilder.Entity<PersistedCalculationResult>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.AttackerParams).HasMaxLength(1000).IsRequired();
+            entity.Property(e => e.DefenderParams).HasMaxLength(1000).IsRequired();
+            entity.Property(e => e.DamageRollsJson).HasMaxLength(500).IsRequired();
+            entity.ToTable("CalculationResults");
         });
 
         modelBuilder.Entity<PersistedUserAuthorizationInfo>(entity =>
         {
             entity.HasKey(e => e.GoogleUserId);
-
-            entity.Property(e => e.GoogleUserId)
-                .HasMaxLength(128)
-                .IsRequired();
-
-            entity.Property(e => e.Role)
-                .HasMaxLength(64)
-                .IsRequired();
-
+            entity.Property(e => e.GoogleUserId).HasMaxLength(128).IsRequired();
+            entity.Property(e => e.Role).HasMaxLength(64).IsRequired();
             entity.HasMany(e => e.Permissions)
                 .WithOne(permission => permission.UserAuthorizationInfo)
                 .HasForeignKey(permission => permission.GoogleUserId)
                 .HasPrincipalKey(user => user.GoogleUserId)
                 .OnDelete(DeleteBehavior.Cascade);
-
             entity.ToTable("UserAuthorizationInfos");
         });
 
         modelBuilder.Entity<PersistedUserPermission>(entity =>
         {
             entity.HasKey(e => e.Id);
-
-            entity.Property(e => e.Id)
-                .ValueGeneratedOnAdd();
-
-            entity.Property(e => e.GoogleUserId)
-                .HasMaxLength(128)
-                .IsRequired();
-
-            entity.Property(e => e.Permission)
-                .HasMaxLength(128)
-                .IsRequired();
-
-            entity.HasIndex(e => new { e.GoogleUserId, e.Permission })
-                .IsUnique();
-
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.Property(e => e.GoogleUserId).HasMaxLength(128).IsRequired();
+            entity.Property(e => e.Permission).HasMaxLength(128).IsRequired();
+            entity.HasIndex(e => new { e.GoogleUserId, e.Permission }).IsUnique();
             entity.ToTable("UserPermissions");
         });
     }
