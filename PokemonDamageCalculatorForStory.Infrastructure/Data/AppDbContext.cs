@@ -40,6 +40,10 @@ public class AppDbContext : DbContext
             entity.Property(e => e.OwnerUserId).HasMaxLength(128).IsRequired();
             entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
             entity.Property(e => e.Status).HasMaxLength(50).IsRequired();
+            entity.HasOne<PersistedRuleSet>()
+                .WithMany()
+                .HasForeignKey(r => r.RuleSetId)
+                .OnDelete(DeleteBehavior.Restrict);
             entity.ToTable("Runs");
         });
 
@@ -47,6 +51,11 @@ public class AppDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.EnemyPokemon).HasMaxLength(100).IsRequired();
+            entity.HasIndex(e => e.RunId);
+            entity.HasOne<PersistedRun>()
+                .WithMany()
+                .HasForeignKey(b => b.RunId)
+                .OnDelete(DeleteBehavior.Cascade);
             entity.ToTable("Battles");
         });
 
@@ -56,6 +65,16 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Species).HasMaxLength(100).IsRequired();
             entity.Property(e => e.Stats).HasMaxLength(500).IsRequired();
             entity.Property(e => e.EVs).HasMaxLength(500).IsRequired();
+            entity.HasIndex(e => e.RunId);
+            entity.HasIndex(e => e.BattleId);
+            entity.HasOne<PersistedBattle>()
+                .WithMany()
+                .HasForeignKey(snapshot => snapshot.BattleId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<PersistedRun>()
+                .WithMany()
+                .HasForeignKey(snapshot => snapshot.RunId)
+                .OnDelete(DeleteBehavior.Restrict);
             entity.ToTable("OwnPokemonSnapshots");
         });
 
@@ -65,6 +84,16 @@ public class AppDbContext : DbContext
             entity.Property(e => e.AttackerParams).HasMaxLength(1000).IsRequired();
             entity.Property(e => e.DefenderParams).HasMaxLength(1000).IsRequired();
             entity.Property(e => e.DamageRollsJson).HasMaxLength(500).IsRequired();
+            entity.HasIndex(e => e.RunId);
+            entity.HasIndex(e => e.BattleId);
+            entity.HasOne<PersistedBattle>()
+                .WithMany()
+                .HasForeignKey(result => result.BattleId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<PersistedRun>()
+                .WithMany()
+                .HasForeignKey(result => result.RunId)
+                .OnDelete(DeleteBehavior.Restrict);
             entity.ToTable("CalculationResults");
         });
 

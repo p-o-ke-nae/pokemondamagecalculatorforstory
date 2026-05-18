@@ -59,10 +59,9 @@ public sealed class BattleRepository(AppDbContext context) : IBattleRepository
         return persisted.Select(snapshot => snapshot.ToDomainSnapshot()).ToList().AsReadOnly();
     }
 
-    public async Task<OwnPokemonSnapshot> SaveSnapshotAsync(OwnPokemonSnapshot snapshot, CancellationToken cancellationToken = default)
+    public async Task<OwnPokemonSnapshot> SaveSnapshotAsync(OwnPokemonSnapshot snapshot, Guid runId, CancellationToken cancellationToken = default)
     {
-        var battle = await context.PersistedBattles.AsNoTracking().FirstOrDefaultAsync(x => x.Id == snapshot.BattleId, cancellationToken);
-        var persisted = snapshot.ToPersistedSnapshot(battle?.RunId ?? Guid.Empty);
+        var persisted = snapshot.ToPersistedSnapshot(runId);
         context.PersistedOwnPokemonSnapshots.Add(persisted);
         await context.SaveChangesAsync(cancellationToken);
         return snapshot;
