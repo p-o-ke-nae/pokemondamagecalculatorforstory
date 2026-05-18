@@ -1,3 +1,5 @@
+using PokemonDamageCalculatorForStory.Domain.Exceptions;
+
 namespace PokemonDamageCalculatorForStory.Domain.Entities;
 
 public sealed class Run
@@ -14,10 +16,10 @@ public sealed class Run
 
     public static Run Create(string ownerUserId, Guid ruleSetId, string name, string status)
     {
-        if (string.IsNullOrWhiteSpace(ownerUserId)) throw new InvalidOperationException("Owner user id is required.");
-        if (ruleSetId == Guid.Empty) throw new InvalidOperationException("RuleSetId is required.");
-        if (string.IsNullOrWhiteSpace(name)) throw new InvalidOperationException("Name is required.");
-        if (string.IsNullOrWhiteSpace(status)) throw new InvalidOperationException("Status is required.");
+        if (string.IsNullOrWhiteSpace(ownerUserId)) throw new ValidationException("Owner user id is required.");
+        if (ruleSetId == Guid.Empty) throw new ValidationException("RuleSetId is required.");
+        if (string.IsNullOrWhiteSpace(name)) throw new ValidationException("Name is required.");
+        if (string.IsNullOrWhiteSpace(status)) throw new ValidationException("Status is required.");
 
         return new Run
         {
@@ -31,8 +33,13 @@ public sealed class Run
 
     public static Run Restore(Guid id, string ownerUserId, Guid ruleSetId, string name, string status)
     {
-        var entity = Create(ownerUserId, ruleSetId, name, status);
-        entity.Id = id;
-        return entity;
+        return new Run
+        {
+            Id = id,
+            OwnerUserId = ownerUserId.Trim(),
+            RuleSetId = ruleSetId,
+            Name = name.Trim(),
+            Status = status.Trim()
+        };
     }
 }

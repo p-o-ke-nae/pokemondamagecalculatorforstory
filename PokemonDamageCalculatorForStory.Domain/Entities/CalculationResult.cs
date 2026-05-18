@@ -1,3 +1,5 @@
+using PokemonDamageCalculatorForStory.Domain.Exceptions;
+
 namespace PokemonDamageCalculatorForStory.Domain.Entities;
 
 public sealed class CalculationResult
@@ -20,11 +22,11 @@ public sealed class CalculationResult
         string defenderParams,
         IReadOnlyList<int> damageRolls)
     {
-        if (runId == Guid.Empty) throw new InvalidOperationException("RunId is required.");
-        if (battleId == Guid.Empty) throw new InvalidOperationException("BattleId is required.");
-        if (string.IsNullOrWhiteSpace(attackerParams)) throw new InvalidOperationException("AttackerParams is required.");
-        if (string.IsNullOrWhiteSpace(defenderParams)) throw new InvalidOperationException("DefenderParams is required.");
-        if (damageRolls.Count == 0) throw new InvalidOperationException("DamageRolls is required.");
+        if (runId == Guid.Empty) throw new ValidationException("RunId is required.");
+        if (battleId == Guid.Empty) throw new ValidationException("BattleId is required.");
+        if (string.IsNullOrWhiteSpace(attackerParams)) throw new ValidationException("AttackerParams is required.");
+        if (string.IsNullOrWhiteSpace(defenderParams)) throw new ValidationException("DefenderParams is required.");
+        if (damageRolls.Count == 0) throw new ValidationException("DamageRolls is required.");
 
         return new CalculationResult
         {
@@ -45,8 +47,14 @@ public sealed class CalculationResult
         string defenderParams,
         IReadOnlyList<int> damageRolls)
     {
-        var entity = Create(runId, battleId, attackerParams, defenderParams, damageRolls);
-        entity.Id = id;
-        return entity;
+        return new CalculationResult
+        {
+            Id = id,
+            RunId = runId,
+            BattleId = battleId,
+            AttackerParams = attackerParams.Trim(),
+            DefenderParams = defenderParams.Trim(),
+            DamageRolls = damageRolls.ToArray()
+        };
     }
 }
