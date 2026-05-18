@@ -50,18 +50,28 @@ flowchart LR
 public class RunsController(IMediator mediator) : ControllerBase
 {
     [HttpPost]
-    public async Task<IActionResult> Create(CreateRunRequest request)
-        => Ok(await mediator.Send(new CreateRunCommand(request.Name, request.RuleSetId)));
-
-    [HttpGet("{id}")]
-    public async Task<IActionResult> GetById(Guid id)
-        => Ok(await mediator.Send(new GetRunByIdQuery(id)));
-
-    [HttpDelete("{id}")]
-    public async Task<IActionResult> Delete(Guid id)
+    [Authorize]
+    public async Task<IActionResult> Create(CreateRunRequest request, CancellationToken ct)
     {
-        await mediator.Send(new DeleteRunCommand(id));
-        return NoContent();
+        var ownerUserId = User.GetRequiredGoogleUserId();
+        var result = await mediator.Send(new CreateRunCommand(ownerUserId, request.Name, request.RuleSetId), ct);
+        return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
+    }
+
+    [HttpGet("{id:guid}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
+    {
+        var result = await mediator.Send(new GetRunByIdQuery(id), ct);
+        return result is null ? NotFound() : Ok(result);
+    }
+
+    [HttpDelete("{id:guid}")]
+    [Authorize]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
+    {
+        var deleted = await mediator.Send(new DeleteRunCommand(id), ct);
+        return deleted ? NoContent() : NotFound();
     }
 }
 ```
@@ -80,34 +90,40 @@ Command はデータ変更操作（Create / Update / Delete）を担う。
 | `CreateBattleCommand` | `CreateBattleCommandHandler` | `POST /api/runs/{runId}/battles` | あり |
 | `UpdateBattleCommand` | `UpdateBattleCommandHandler` | `PUT /api/runs/{runId}/battles/{id}` | あり |
 | `DeleteBattleCommand` | `DeleteBattleCommandHandler` | `DELETE /api/runs/{runId}/battles/{id}` | あり |
-| `CalculateDamageCommand` | `CalculateDamageCommandHandler` | `POST /api/runs/{runId}/battles/{id}/calculate` | **なし**（純粋計算） |
+| `CalculateDamageCommand` | `CalculateDamageCommandHandler` | `POST /api/runs/{runId}/battles/{id}/calculate` | **あり**（`CalculationResult` を永続化） |
 | `AddProgressionEventCommand` | `AddProgressionEventCommandHandler` | `POST /api/runs/{runId}/party-state` | あり |
 
 ### CalculateDamageCommandHandler の特記事項
 
-`CalculateDamageCommandHandler` は Repository へのアクセスを行わない。入力パラメータのみで `DamageCalculator.Calculate()` を呼び出し、結果を返す。
+`CalculateDamageCommandHandler` はダメージ計算ロジックを Handler 内に実装し、計算結果を `IBattleRepository.SaveCalculationResultAsync()` で DB に保存する。
 
 ```csharp
-public class CalculateDamageCommandHandler : IRequestHandler<CalculateDamageCommand, CalculateDamageResponse>
+public class CalculateDamageCommandHandler(IBattleRepository repository)
+    : IRequestHandler<CalculateDamageCommand, CalculationResultDto>
 {
-    public Task<CalculateDamageResponse> Handle(CalculateDamageCommand request, CancellationToken ct)
+    public async Task<CalculationResultDto> Handle(CalculateDamageCommand request, CancellationToken ct)
     {
-        var result = DamageCalculator.Calculate(request.Attacker, request.Defender);
-        return Task.FromResult(new CalculateDamageResponse { Success = true, Data = result.ToDto() });
+        var levelFactor = (2 * request.AttackerLevel / 5) + 2;
+        var baseDamage = (int)Math.Floor((double)(levelFactor * request.MovePower * request.AttackStat)
+            / request.DefenseStat / 50) + 2;
+
+        var rolls = Enumerable.Range(85, 16)
+            .Select(roll =>
+            {
+                var rolledDamage = (int)Math.Floor(baseDamage * roll / 100.0);
+                var stabbedDamage = (int)Math.Floor(rolledDamage * (request.HasStab ? 1.5 : 1.0));
+                return (int)Math.Floor(stabbedDamage * request.TypeEffectiveness);
+            })
+            .ToArray();
+
+        var attackerParamsJson = JsonSerializer.Serialize(new { ... });
+        var defenderParamsJson = JsonSerializer.Serialize(new { ... });
+
+        var result = CalculationResult.Create(request.RunId, request.BattleId, attackerParamsJson, defenderParamsJson, rolls);
+        var saved = await repository.SaveCalculationResultAsync(result, ct);
+        return new CalculationResultDto(saved.Id, saved.RunId, saved.BattleId, saved.AttackerParams, saved.DefenderParams, saved.DamageRolls);
     }
 }
-```
-
-### 所有権チェックを伴う Handler
-
-`UpdateRunCommand` / `DeleteRunCommand` は Handler 内で所有権を確認する。
-
-```csharp
-var run = await _runRepository.FindByIdAsync(request.RunId, ct)
-    ?? throw new DomainException("Run が見つかりません");
-
-if (run.OwnerId != request.RequestingUserId)
-    throw new DomainException("この Run を操作する権限がありません");
 ```
 
 ---
@@ -152,6 +168,9 @@ MediatR の `IPipelineBehavior<TRequest, TResponse>` として `ValidationBehavi
 
 ```
 Application/
+├── Authorization/
+│   ├── AppPermissions.cs
+│   └── AppRoles.cs
 ├── UseCases/
 │   ├── Commands/
 │   │   ├── CreateRunCommand.cs
@@ -167,7 +186,7 @@ Application/
 │   │   ├── DeleteBattleCommand.cs
 │   │   ├── DeleteBattleCommandHandler.cs
 │   │   ├── CalculateDamageCommand.cs
-│   │   ├── CalculateDamageCommandHandler.cs
+│   │   ├── CalculateDamageCommandHandler.cs   ← 計算ロジック内蔵 + DB 保存
 │   │   ├── AddProgressionEventCommand.cs
 │   │   └── AddProgressionEventCommandHandler.cs
 │   └── Queries/
@@ -184,30 +203,24 @@ Application/
 │       ├── ProjectPartyStateQuery.cs
 │       └── ProjectPartyStateQueryHandler.cs
 ├── DTOs/
-│   ├── EnemyPokemonParamsDto.cs
-│   ├── AttackerParamsDto.cs
-│   ├── DefenderParamsDto.cs
-│   ├── RuleSetResponseDto.cs
+│   ├── RuleSetDto.cs
 │   ├── CreateRunRequest.cs
 │   ├── UpdateRunRequest.cs
-│   ├── RunResponseDto.cs
+│   ├── RunDto.cs
 │   ├── CreateBattleRequest.cs
 │   ├── UpdateBattleRequest.cs
-│   ├── BattleResponseDto.cs
+│   ├── BattleDto.cs
 │   ├── CalculateDamageRequest.cs
-│   ├── CalculateDamageResponseDto.cs
+│   ├── CalculationResultDto.cs
 │   ├── AddProgressionEventRequest.cs
-│   └── PartyStateResponseDto.cs
-├── Validators/
-│   ├── CreateRunCommandValidator.cs
-│   ├── UpdateRunCommandValidator.cs
-│   ├── CreateBattleCommandValidator.cs
-│   ├── UpdateBattleCommandValidator.cs
-│   ├── CalculateDamageCommandValidator.cs
-│   └── AddProgressionEventCommandValidator.cs
-└── Mappers/
-    ├── RuleSetMapper.cs
-    ├── RunMapper.cs
-    ├── BattleMapper.cs
-    └── CalculationResultMapper.cs
+│   ├── PartyStateDto.cs
+│   └── OwnPokemonSnapshotDto.cs
+├── Mappers/                              ← 現在は空（Mapper は各 Handler 内でインライン実装）
+└── Validators/
+    ├── CreateRunCommandValidator.cs
+    ├── UpdateRunCommandValidator.cs
+    ├── CreateBattleCommandValidator.cs
+    ├── UpdateBattleCommandValidator.cs
+    ├── CalculateDamageCommandValidator.cs
+    └── AddProgressionEventCommandValidator.cs
 ```

@@ -14,11 +14,13 @@
 
 | 種別 | クラス |
 |------|------|
-| Entity | `RuleSet`, `Run`, `Battle` |
-| Value Object（非永続） | `CalculationResult` |
-| Value Object（record） | `EnemyPokemonParams`, `AttackerParams`, `DefenderParams`, `PokemonStats`, `PokemonEVs` |
-| Port（インターフェース） | `IRuleSetRepository`, `IRunRepository`, `IBattleRepository` |
-| ドメインサービス | `DamageCalculator`（静的クラス） |
+| Entity | `RuleSet`, `Run`, `Battle`, `CalculationResult`, `OwnPokemonSnapshot`, `UserAuthorizationInfo` |
+| Port（インターフェース） | `IRuleSetRepository`, `IRunRepository`, `IBattleRepository`, `IUserAuthorizationInfoRepository` |
+| 例外 | `DomainException`, `NotFoundException`, `ValidationException` |
+
+> **設計注記**: Value Object（`EnemyPokemonParams`, `AttackerParams` 等）は Domain 層には存在しない。  
+> EnemyPokemon などの複合パラメータは JSON シリアライズされた `string` として Entity に保持し、DTO レイヤで構造化する。  
+> ダメージ計算ロジックは Domain の静的クラスではなく Application 層の `CalculateDamageCommandHandler` に実装されている。
 
 ---
 
@@ -30,24 +32,24 @@
 public sealed class Run
 {
     public Guid Id { get; private set; }
-    public string Name { get; private set; } = default!;
+    public string OwnerUserId { get; private set; } = string.Empty;
     public Guid RuleSetId { get; private set; }
-    public string OwnerId { get; private set; } = default!;
-    public string Status { get; private set; } = default!;
+    public string Name { get; private set; } = string.Empty;
+    public string Status { get; private set; } = string.Empty;
 
     private Run() { }  // EFCore 用プライベートコンストラクタ
 
-    // 新規作成：ビジネスルール検証あり
-    public static Run Create(string name, Guid ruleSetId, string ownerId) { ... }
+    // 新規作成：ビジネスルール検証あり（ValidationException を throw）
+    public static Run Create(string ownerUserId, Guid ruleSetId, string name, string status) { ... }
 
     // DB 復元：検証なし（永続化済みデータを信頼）
-    public static Run Restore(Guid id, string name, Guid ruleSetId, string ownerId, string status) { ... }
+    public static Run Restore(Guid id, string ownerUserId, Guid ruleSetId, string name, string status) { ... }
 }
 ```
 
 | メソッド | 用途 | ビジネスルール検証 |
 |---------|------|-----------------|
-| `Create(...)` | 新規作成 | あり（DomainException を throw） |
+| `Create(...)` | 新規作成 | あり（`ValidationException` を throw） |
 | `Restore(...)` | DB からの復元 | なし |
 
 ---
@@ -61,153 +63,181 @@ public sealed class Run
 | プロパティ | 型 | 説明 | ビジネスルール |
 |-----------|-----|------|-------------|
 | `Id` | `Guid` | 主キー | — |
-| `Slug` | `string` | URL-friendly 識別子（例: `gen6-base`） | 空白禁止・URL-safe 形式 |
-| `Generation` | `int` | 世代番号 | 3 以上 |
+| `Slug` | `string` | URL-friendly 識別子（例: `gen6-standard`） | 空白禁止 |
+| `Generation` | `int` | 世代番号 | 1 以上 |
 | `Title` | `string` | 表示名 | 空白禁止 |
 | `Version` | `string` | バージョン文字列 | 空白禁止 |
-| `Status` | `string` | 有効状態 | `Active` / `Inactive` |
+| `Status` | `string` | 有効状態 | 空白禁止 |
+| `Summary` | `string` | 概要テキスト | — |
 
 ```csharp
 public sealed class RuleSet
 {
     public Guid Id { get; private set; }
-    public string Slug { get; private set; } = default!;
+    public string Slug { get; private set; } = string.Empty;
     public int Generation { get; private set; }
-    public string Title { get; private set; } = default!;
-    public string Version { get; private set; } = default!;
-    public string Status { get; private set; } = default!;
+    public string Title { get; private set; } = string.Empty;
+    public string Version { get; private set; } = string.Empty;
+    public string Status { get; private set; } = string.Empty;
+    public string Summary { get; private set; } = string.Empty;
 
     private RuleSet() { }
 
-    public static RuleSet Create(string slug, int generation, string title, string version) { ... }
-    public static RuleSet Restore(Guid id, string slug, int generation, string title, string version, string status) { ... }
+    public static RuleSet Create(string slug, int generation, string title, string version, string status, string summary) { ... }
+    public static RuleSet Restore(Guid id, string slug, int generation, string title, string version, string status, string summary) { ... }
 }
 ```
 
 ### 2-2. Run
 
-ユーザーの攻略計画単位。認証ユーザー（OwnerId）に紐付く。
+ユーザーの攻略計画単位。認証ユーザー（OwnerUserId）に紐付く。
 
 | プロパティ | 型 | 説明 | ビジネスルール |
 |-----------|-----|------|-------------|
 | `Id` | `Guid` | 主キー | — |
-| `OwnerId` | `string` | Google User ID | 空白禁止 |
+| `OwnerUserId` | `string` | Google User ID | 空白禁止 |
 | `RuleSetId` | `Guid` | 参照する RuleSet | 空 Guid 禁止 |
-| `Name` | `string` | Run 名称 | 空白禁止 |
-| `Status` | `string` | 状態 | `Active` / `Completed` / `Archived` |
+| `Name` | `string` | Run 名称 | 空白禁止・200 文字以内 |
+| `Status` | `string` | 状態 | 空白禁止 |
 
 ```csharp
 public sealed class Run
 {
     public Guid Id { get; private set; }
-    public string OwnerId { get; private set; } = default!;
+    public string OwnerUserId { get; private set; } = string.Empty;
     public Guid RuleSetId { get; private set; }
-    public string Name { get; private set; } = default!;
-    public string Status { get; private set; } = default!;
+    public string Name { get; private set; } = string.Empty;
+    public string Status { get; private set; } = string.Empty;
 
     private Run() { }
 
-    public static Run Create(string name, Guid ruleSetId, string ownerId) { ... }
-    public static Run Restore(Guid id, string name, Guid ruleSetId, string ownerId, string status) { ... }
-    public void Update(string name, string status) { ... }
+    public static Run Create(string ownerUserId, Guid ruleSetId, string name, string status) { ... }
+    public static Run Restore(Guid id, string ownerUserId, Guid ruleSetId, string name, string status) { ... }
 }
 ```
 
 ### 2-3. Battle
 
-Run 内の個別戦闘記録。相手ポケモンのパラメータを `EnemyPokemonParams`（Value Object）として保持する。
+Run 内の個別戦闘記録。相手ポケモンのパラメータを JSON 文字列（`EnemyPokemon`）として保持する。
 
 | プロパティ | 型 | 説明 | ビジネスルール |
 |-----------|-----|------|-------------|
 | `Id` | `Guid` | 主キー | — |
 | `RunId` | `Guid` | 所属する Run | 空 Guid 禁止 |
 | `Sequence` | `int` | 戦闘順序 | 1 以上 |
-| `EnemyPokemon` | `EnemyPokemonParams` | 相手ポケモンパラメータ | Value Object（次節参照） |
+| `EnemyPokemon` | `string` | 相手ポケモンパラメータ（JSON） | 空白禁止 |
 
 ```csharp
 public sealed class Battle
 {
     public Guid Id { get; private set; }
     public Guid RunId { get; private set; }
+    public string EnemyPokemon { get; private set; } = string.Empty;
     public int Sequence { get; private set; }
-    public EnemyPokemonParams EnemyPokemon { get; private set; } = default!;
 
     private Battle() { }
 
-    public static Battle Create(Guid runId, int sequence, EnemyPokemonParams enemyPokemon) { ... }
-    public static Battle Restore(Guid id, Guid runId, int sequence, EnemyPokemonParams enemyPokemon) { ... }
-    public void Update(int sequence, EnemyPokemonParams enemyPokemon) { ... }
+    public static Battle Create(Guid runId, string enemyPokemon, int sequence) { ... }
+    public static Battle Restore(Guid id, Guid runId, string enemyPokemon, int sequence) { ... }
 }
 ```
 
-### 2-4. CalculationResult（非永続 Value Object）
+### 2-4. CalculationResult（永続 Entity）
 
-ダメージ計算の結果を保持する。DB への書き込みは行わない。
+ダメージ計算の結果を保持する。DB に保存される（`PersistedCalculationResult` テーブル）。
 
 | プロパティ | 型 | 説明 |
 |-----------|-----|------|
-| `Attacker` | `AttackerParams` | 攻撃側パラメータ |
-| `Defender` | `DefenderParams` | 防御側パラメータ |
+| `Id` | `Guid` | 主キー |
+| `RunId` | `Guid` | 実行 Run |
+| `BattleId` | `Guid` | 対象 Battle |
+| `AttackerParams` | `string` | 攻撃側パラメータ（JSON 文字列） |
+| `DefenderParams` | `string` | 防御側パラメータ（JSON 文字列） |
 | `DamageRolls` | `IReadOnlyList<int>` | ダメージ16段階（`[0]`=最小, `[15]`=最大） |
+
+```csharp
+public sealed class CalculationResult
+{
+    public Guid Id { get; private set; }
+    public Guid RunId { get; private set; }
+    public Guid BattleId { get; private set; }
+    public string AttackerParams { get; private set; } = string.Empty;
+    public string DefenderParams { get; private set; } = string.Empty;
+    public IReadOnlyList<int> DamageRolls { get; private set; } = Array.Empty<int>();
+
+    private CalculationResult() { }
+
+    public static CalculationResult Create(Guid runId, Guid battleId, string attackerParams, string defenderParams, IReadOnlyList<int> damageRolls) { ... }
+    public static CalculationResult Restore(Guid id, Guid runId, Guid battleId, string attackerParams, string defenderParams, IReadOnlyList<int> damageRolls) { ... }
+}
+```
+
+### 2-5. OwnPokemonSnapshot
+
+パーティ進捗イベントを記録する。特定の Battle 時点での自分のポケモン状態を保持する。
+
+| プロパティ | 型 | 説明 | ビジネスルール |
+|-----------|-----|------|-------------|
+| `Id` | `Guid` | 主キー | — |
+| `BattleId` | `Guid` | 対応する Battle | 空 Guid 禁止 |
+| `Species` | `string` | ポケモン種族名 | 空白禁止・100 文字以内 |
+| `Level` | `int` | レベル | 1 以上 |
+| `Stats` | `string` | 実数値（JSON 文字列） | 空白禁止 |
+| `EVs` | `string` | 努力値（JSON 文字列） | 空白禁止 |
+
+```csharp
+public sealed class OwnPokemonSnapshot
+{
+    public Guid Id { get; private set; }
+    public Guid BattleId { get; private set; }
+    public string Species { get; private set; } = string.Empty;
+    public int Level { get; private set; }
+    public string Stats { get; private set; } = string.Empty;
+    public string EVs { get; private set; } = string.Empty;
+
+    private OwnPokemonSnapshot() { }
+
+    public static OwnPokemonSnapshot Create(Guid battleId, string species, int level, string stats, string eVs) { ... }
+    public static OwnPokemonSnapshot Restore(Guid id, Guid battleId, string species, int level, string stats, string eVs) { ... }
+}
+```
+
+### 2-6. UserAuthorizationInfo
+
+Google ユーザーの権限情報を保持する認証サポートエンティティ。DB に格納され、認証時に照合される。
+
+| プロパティ | 型 | 説明 |
+|-----------|-----|------|
+| `GoogleUserId` | `string` | Google User ID |
+| `Role` | `string` | ロール（例: `Administrator`, `Member`） |
+| `Permissions` | `IReadOnlyCollection<string>` | 権限文字列セット（例: `runs.manage.any`） |
+
+```csharp
+public class UserAuthorizationInfo
+{
+    public string GoogleUserId { get; }
+    public string Role { get; }
+    public IReadOnlyCollection<string> Permissions { get; }
+
+    // Restore のみ（Create はない — DB シードで管理）
+    public static UserAuthorizationInfo Restore(string googleUserId, string role, IEnumerable<string> permissions) { ... }
+
+    public bool HasRole(string role) { ... }
+    public bool HasPermission(string permission) { ... }
+}
+```
 
 ---
 
-## 3. Value Object 一覧
+## 3. 例外クラス
 
-C# `record` で実装する。イミュータブルで等価性は値で比較する。
+Domain 層は以下の例外クラスを定義する。すべて `DomainException` を基底クラスとする。
 
-### 3-1. EnemyPokemonParams
-
-相手ポケモンの種族値・タイプ情報を保持する。`PersistedBattle` テーブルに `OwnsOne` でフラット展開する。
-
-```csharp
-public record EnemyPokemonParams(
-    string Species,       // 種族名
-    int Level,
-    int Hp,
-    int Attack,
-    int Defense,
-    int SpAtk,
-    int SpDef,
-    int Speed,
-    string Type1,         // タイプ1
-    string? Type2         // タイプ2（nullable）
-);
-```
-
-### 3-2. AttackerParams
-
-ダメージ計算の攻撃側入力パラメータ。
-
-```csharp
-public record AttackerParams(
-    int Level,
-    int Attack,              // 物理攻撃 or 特殊攻撃の実数値
-    int MovePower,           // 技の威力
-    string MoveCategory,     // "Physical" or "Special"
-    bool HasStab,            // STAB 有無
-    decimal TypeEffectiveness  // タイプ相性倍率（0, 0.25, 0.5, 1, 2, 4）
-);
-```
-
-### 3-3. DefenderParams
-
-ダメージ計算の防御側入力パラメータ。
-
-```csharp
-public record DefenderParams(
-    int Defense    // 物理防御 or 特殊防御の実数値
-);
-```
-
-### 3-4. PokemonStats・PokemonEVs
-
-`OwnPokemonSnapshot` の実数値・努力値を保持する。`PersistedOwnPokemonSnapshot` テーブルに `OwnsOne` でフラット展開する。
-
-```csharp
-public record PokemonStats(int Hp, int Attack, int Defense, int SpAtk, int SpDef, int Speed);
-public record PokemonEVs(int Hp, int Attack, int Defense, int SpAtk, int SpDef, int Speed);
-```
+| クラス | 用途 |
+|--------|------|
+| `DomainException` | 基底クラス（`InvalidOperationException` を継承） |
+| `ValidationException` | Entity の入力検証失敗時（Create メソッド内） |
+| `NotFoundException` | リソースが見つからない場合 |
 
 ---
 
@@ -217,32 +247,38 @@ public record PokemonEVs(int Hp, int Attack, int Defense, int SpAtk, int SpDef, 
 // Domain/Ports/IRuleSetRepository.cs
 public interface IRuleSetRepository
 {
-    Task<IReadOnlyList<RuleSet>> GetAllAsync(CancellationToken ct);
-    Task<RuleSet?> FindByIdAsync(Guid id, CancellationToken ct);
-    Task<RuleSet?> FindBySlugAsync(string slug, CancellationToken ct);
+    Task<IReadOnlyList<RuleSet>> FindAllAsync(CancellationToken cancellationToken = default);
+    Task<RuleSet?> FindByIdAsync(Guid id, CancellationToken cancellationToken = default);
 }
 
 // Domain/Ports/IRunRepository.cs
 public interface IRunRepository
 {
-    Task<IReadOnlyList<Run>> GetAllByOwnerIdAsync(string ownerId, CancellationToken ct);
-    Task<Run?> FindByIdAsync(Guid id, CancellationToken ct);
-    Task<Run> SaveAsync(Run run, CancellationToken ct);
-    Task DeleteAsync(Guid id, CancellationToken ct);
+    Task<IReadOnlyList<Run>> FindAllAsync(CancellationToken cancellationToken = default);
+    Task<Run?> FindByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<Run> SaveAsync(Run run, CancellationToken cancellationToken = default);
+    Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default);
 }
 
 // Domain/Ports/IBattleRepository.cs
-// OwnPokemonSnapshot は Battle と同一 Repository で一括管理する
+// OwnPokemonSnapshot と CalculationResult も IBattleRepository で一括管理する
 public interface IBattleRepository
 {
-    Task<IReadOnlyList<Battle>> GetAllByRunIdAsync(Guid runId, CancellationToken ct);
-    Task<Battle?> FindByIdAsync(Guid id, CancellationToken ct);
-    Task<Battle> SaveAsync(Battle battle, CancellationToken ct);
-    Task DeleteAsync(Guid id, CancellationToken ct);
+    Task<IReadOnlyList<Battle>> ListByRunAsync(Guid runId, CancellationToken cancellationToken = default);
+    Task<Battle?> FindAsync(Guid runId, Guid battleId, CancellationToken cancellationToken = default);
+    Task<Battle> SaveAsync(Battle battle, CancellationToken cancellationToken = default);
+    Task<bool> DeleteAsync(Guid runId, Guid battleId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<OwnPokemonSnapshot>> ListSnapshotsByRunAsync(Guid runId, CancellationToken cancellationToken = default);
+    Task<OwnPokemonSnapshot> SaveSnapshotAsync(OwnPokemonSnapshot snapshot, CancellationToken cancellationToken = default);
+    Task<CalculationResult> SaveCalculationResultAsync(CalculationResult result, CancellationToken cancellationToken = default);
+}
+
+// Domain/Ports/IUserAuthorizationInfoRepository.cs
+public interface IUserAuthorizationInfoRepository
+{
+    Task<UserAuthorizationInfo?> FindByGoogleUserIdAsync(string googleUserId, CancellationToken cancellationToken = default);
 }
 ```
-
-> `OwnPokemonSnapshot` は独立した Port を設けず、`IBattleRepository` で一括管理する。
 
 ---
 
@@ -252,55 +288,26 @@ public interface IBattleRepository
 
 ```
 BaseDamage = Floor( Floor( Floor(2 * Level / 5 + 2) * Power * A / D ) / 50 ) + 2
-Damage(roll) = Floor( BaseDamage * Modifier(roll) )
+Damage(roll) = Floor( Floor( BaseDamage * roll / 100 ) * STAB ) * TypeEffectiveness
 
-Modifier(roll) = STAB * TypeEffectiveness * (RandomFactor[roll] / 100)
-RandomFactor   = { 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100 }
-STAB           = HasStab ? 1.5 : 1.0
+RandomFactor = { 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100 }
+STAB         = HasStab ? 1.5 : 1.0
 ```
 
 | 変数 | 説明 |
 |------|------|
-| `Level` | 攻撃側レベル |
+| `Level` | 攻撃側レベル（`AttackerLevel`） |
 | `Power` | 技の威力（`MovePower`） |
-| `A` | 物理 or 特殊攻撃の実数値（`MoveCategory` で切り替え） |
-| `D` | 物理 or 特殊防御の実数値（`MoveCategory` で切り替え） |
-| `TypeEffectiveness` | タイプ相性倍率（`0, 0.25, 0.5, 1.0, 2.0, 4.0`） |
+| `A` | 攻撃の実数値（`AttackStat`；`IsSpecialMove` で物理/特殊を切り替え） |
+| `D` | 防御の実数値（`DefenseStat`） |
+| `TypeEffectiveness` | タイプ相性倍率（`float`） |
 
 ### 5-2. 実装方針
 
-- `DamageCalculator` は Domain 層の**静的クラス**として実装する（外部依存ゼロ）
-- 乱数生成器は使用しない。固定配列 `{ 85..100 }` で16段階すべてを**決定的に**計算する
-- `DamageRolls[0]` = 最小ダメージ（85/100）、`DamageRolls[15]` = 最大ダメージ（100/100）
-
-```csharp
-// Domain/DamageCalculator.cs
-public static class DamageCalculator
-{
-    private static readonly int[] RandomFactors =
-        { 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100 };
-
-    public static CalculationResult Calculate(AttackerParams attacker, DefenderParams defender)
-    {
-        int baseDamage = CalcBase(attacker.Level, attacker.MovePower, attacker.Attack, defender.Defense);
-        var rolls = RandomFactors
-            .Select(r => ApplyModifier(baseDamage, attacker.HasStab, attacker.TypeEffectiveness, r))
-            .ToArray();
-        return CalculationResult.Create(attacker, defender, rolls);
-    }
-
-    private static int CalcBase(int level, int power, int attack, int defense)
-        => (int)Math.Floor((double)(
-              (int)Math.Floor((double)((int)Math.Floor(2.0 * level / 5 + 2) * power * attack) / defense)
-           ) / 50) + 2;
-
-    private static int ApplyModifier(int baseDamage, bool hasStab, decimal typeEff, int randomFactor)
-    {
-        double stab = hasStab ? 1.5 : 1.0;
-        return (int)Math.Floor(baseDamage * stab * (double)typeEff * randomFactor / 100.0);
-    }
-}
-```
+- ダメージ計算ロジックは Application 層の `CalculateDamageCommandHandler` に実装する（Domain 層の静的クラスは存在しない）
+- 乱数生成器は使用しない。`Enumerable.Range(85, 16)` で16段階すべてを**決定的に**計算する
+- 計算結果（`CalculationResult` Entity）は DB に永続化する
+- `AttackerParams` と `DefenderParams` は JSON 文字列として保存される
 
 ---
 
@@ -315,76 +322,63 @@ classDiagram
         +string Title
         +string Version
         +string Status
-        +Create(slug, generation, title, version) RuleSet
-        +Restore(id, slug, generation, title, version, status) RuleSet
+        +string Summary
+        +Create(slug, generation, title, version, status, summary) RuleSet
+        +Restore(id, slug, generation, title, version, status, summary) RuleSet
     }
 
     class Run {
         +Guid Id
-        +string OwnerId
+        +string OwnerUserId
         +Guid RuleSetId
         +string Name
         +string Status
-        +Create(name, ruleSetId, ownerId) Run
-        +Restore(id, name, ruleSetId, ownerId, status) Run
-        +Update(name, status)
+        +Create(ownerUserId, ruleSetId, name, status) Run
+        +Restore(id, ownerUserId, ruleSetId, name, status) Run
     }
 
     class Battle {
         +Guid Id
         +Guid RunId
+        +string EnemyPokemon
         +int Sequence
-        +EnemyPokemonParams EnemyPokemon
-        +Create(runId, sequence, enemyPokemon) Battle
-        +Restore(id, runId, sequence, enemyPokemon) Battle
-        +Update(sequence, enemyPokemon)
-    }
-
-    class EnemyPokemonParams {
-        <<record>>
-        +string Species
-        +int Level
-        +int Hp
-        +int Attack
-        +int Defense
-        +int SpAtk
-        +int SpDef
-        +int Speed
-        +string Type1
-        +string? Type2
-    }
-
-    class AttackerParams {
-        <<record>>
-        +int Level
-        +int Attack
-        +int MovePower
-        +string MoveCategory
-        +bool HasStab
-        +decimal TypeEffectiveness
-    }
-
-    class DefenderParams {
-        <<record>>
-        +int Defense
+        +Create(runId, enemyPokemon, sequence) Battle
+        +Restore(id, runId, enemyPokemon, sequence) Battle
     }
 
     class CalculationResult {
-        +AttackerParams Attacker
-        +DefenderParams Defender
+        +Guid Id
+        +Guid RunId
+        +Guid BattleId
+        +string AttackerParams
+        +string DefenderParams
         +IReadOnlyList~int~ DamageRolls
-        +Create(attacker, defender, rolls) CalculationResult
+        +Create(runId, battleId, attackerParams, defenderParams, rolls) CalculationResult
+        +Restore(id, runId, battleId, ...) CalculationResult
     }
 
-    class DamageCalculator {
-        <<static>>
-        +Calculate(attacker, defender) CalculationResult
+    class OwnPokemonSnapshot {
+        +Guid Id
+        +Guid BattleId
+        +string Species
+        +int Level
+        +string Stats
+        +string EVs
+        +Create(battleId, species, level, stats, eVs) OwnPokemonSnapshot
+        +Restore(id, battleId, ...) OwnPokemonSnapshot
+    }
+
+    class UserAuthorizationInfo {
+        +string GoogleUserId
+        +string Role
+        +IReadOnlyCollection~string~ Permissions
+        +Restore(googleUserId, role, permissions) UserAuthorizationInfo
+        +HasRole(role) bool
+        +HasPermission(permission) bool
     }
 
     Run --> RuleSet : RuleSetId
     Battle --> Run : RunId
-    Battle --> EnemyPokemonParams : OwnsOne
-    DamageCalculator --> AttackerParams
-    DamageCalculator --> DefenderParams
-    DamageCalculator --> CalculationResult
+    CalculationResult --> Battle : BattleId
+    OwnPokemonSnapshot --> Battle : BattleId
 ```

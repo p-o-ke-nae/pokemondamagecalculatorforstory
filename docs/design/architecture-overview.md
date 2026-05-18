@@ -77,53 +77,68 @@ Domain/
 │   ├── RuleSet.cs
 │   ├── Run.cs
 │   ├── Battle.cs
-│   └── CalculationResult.cs          ← 非永続 Value Object
-├── ValueObjects/
-│   ├── EnemyPokemonParams.cs
-│   ├── AttackerParams.cs
-│   ├── DefenderParams.cs
-│   ├── PokemonStats.cs
-│   └── PokemonEVs.cs
+│   ├── CalculationResult.cs          ← 永続 Entity（DB に保存される）
+│   ├── OwnPokemonSnapshot.cs         ← 進捗スナップショット Entity
+│   └── UserAuthorizationInfo.cs      ← 認証サポート Entity
 ├── Ports/
 │   ├── IRuleSetRepository.cs
 │   ├── IRunRepository.cs
-│   └── IBattleRepository.cs          ← OwnPokemonSnapshot も一括管理
-├── DamageCalculator.cs               ← 静的クラス（外部依存ゼロ）
+│   ├── IBattleRepository.cs          ← OwnPokemonSnapshot / CalculationResult も一括管理
+│   └── IUserAuthorizationInfoRepository.cs
 └── Exceptions/
-    └── DomainException.cs
+    ├── DomainException.cs
+    ├── NotFoundException.cs
+    └── ValidationException.cs
 
 Application/
+├── Authorization/
+│   ├── AppPermissions.cs
+│   └── AppRoles.cs
 ├── UseCases/
 │   ├── Commands/                     ← 8 Command + Handler ペア
 │   └── Queries/                      ← 6 Query + Handler ペア
-├── DTOs/                             ← Request / Response DTO
+├── DTOs/                             ← Request / Response DTO（フラット record）
 ├── Validators/                       ← 6 FluentValidation Validator
-└── Mappers/                          ← Entity ↔ DTO 変換
+└── Mappers/                          ← 現在は空（Handler 内でインライン変換）
 
 Infrastructure/
 ├── Data/
 │   ├── AppDbContext.cs
+│   ├── AppDbContextDesignTimeFactory.cs
+│   ├── DesignTimeConnectionStringResolver.cs
 │   └── Models/
 │       ├── PersistedRuleSet.cs
 │       ├── PersistedRun.cs
-│       ├── PersistedBattle.cs        ← EnemyPokemon OwnsOne
-│       └── PersistedOwnPokemonSnapshot.cs  ← Stats / EVs OwnsOne
+│       ├── PersistedBattle.cs
+│       ├── PersistedCalculationResult.cs
+│       ├── PersistedOwnPokemonSnapshot.cs
+│       ├── PersistedUserAuthorizationInfo.cs
+│       └── PersistedUserPermission.cs
 ├── Repositories/
 │   ├── RuleSetRepository.cs
 │   ├── RunRepository.cs
-│   └── BattleRepository.cs
+│   ├── BattleRepository.cs
+│   └── UserAuthorizationInfoRepository.cs
 ├── Mappers/
 │   ├── PersistedRuleSetMapper.cs
 │   ├── PersistedRunMapper.cs
-│   └── PersistedBattleMapper.cs
+│   ├── PersistedBattleMapper.cs
+│   └── PersistedUserAuthorizationInfoMapper.cs
 └── Migrations/
 
 Web/
+├── Authentication/
+│   └── GoogleAccessTokenAuthenticationHandler.cs ほか
+├── Authorization/
+│   ├── AppPolicies.cs
+│   └── AuthorizeOperationFilter.cs
 ├── Controllers/
 │   ├── RuleSetsController.cs
-│   ├── RunsController.cs
+│   ├── RunsController.cs             ← party-state エンドポイントも保有
 │   └── BattlesController.cs
-└── Authorization/
+├── Extensions/
+│   └── ClaimsPrincipalExtensions.cs
+└── Program.cs
 ```
 
 ---
