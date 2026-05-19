@@ -25,12 +25,48 @@ public sealed class PokemonSnapshotValueObjectsTests
     }
 
     [Fact]
+    public void PokemonStats_FromJson_NormalizesCaseInsensitiveFieldNames()
+    {
+        var stats = PokemonStats.FromJson(
+            """
+            {
+              "hp": 35,
+              "attack": 55,
+              "defense": 40,
+              "specialattack": 50,
+              "specialdefense": 50,
+              "speed": 90
+            }
+            """);
+
+        Assert.Equal("{\"Hp\":35,\"Attack\":55,\"Defense\":40,\"SpecialAttack\":50,\"SpecialDefense\":50,\"Speed\":90}", stats.ToJson());
+    }
+
+    [Fact]
     public void PokemonStats_FromJson_Throws_WhenRequiredFieldIsMissing()
     {
         var exception = Assert.Throws<ValidationException>(() =>
             PokemonStats.FromJson("{\"Hp\":35,\"Attack\":55,\"Defense\":40,\"SpecialAttack\":50,\"SpecialDefense\":50}"));
 
         Assert.Equal("Stats is missing required fields: Speed.", exception.Message);
+    }
+
+    [Fact]
+    public void PokemonStats_FromJson_Throws_WhenFieldIsUnsupported()
+    {
+        var exception = Assert.Throws<ValidationException>(() =>
+            PokemonStats.FromJson("{\"Hp\":35,\"Attack\":55,\"Defense\":40,\"SpecialAttack\":50,\"SpecialDefense\":50,\"Speed\":90,\"Accuracy\":100}"));
+
+        Assert.Equal("Stats contains unsupported field 'Accuracy'.", exception.Message);
+    }
+
+    [Fact]
+    public void PokemonStats_FromJson_Throws_WhenFieldIsDuplicatedUsingDifferentCase()
+    {
+        var exception = Assert.Throws<ValidationException>(() =>
+            PokemonStats.FromJson("{\"Hp\":35,\"hp\":36,\"Attack\":55,\"Defense\":40,\"SpecialAttack\":50,\"SpecialDefense\":50,\"Speed\":90}"));
+
+        Assert.Equal("Stats contains duplicate field 'hp'.", exception.Message);
     }
 
     [Fact]
