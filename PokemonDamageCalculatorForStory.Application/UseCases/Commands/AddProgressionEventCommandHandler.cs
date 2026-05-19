@@ -3,6 +3,7 @@ using PokemonDamageCalculatorForStory.Application.DTOs;
 using PokemonDamageCalculatorForStory.Domain.Entities;
 using PokemonDamageCalculatorForStory.Domain.Exceptions;
 using PokemonDamageCalculatorForStory.Domain.Ports;
+using PokemonDamageCalculatorForStory.Domain.ValueObjects;
 
 namespace PokemonDamageCalculatorForStory.Application.UseCases.Commands;
 
@@ -14,8 +15,13 @@ public sealed class AddProgressionEventCommandHandler(IBattleRepository reposito
         if (battle is null)
             throw new NotFoundException($"Battle '{request.BattleId}' not found for run '{request.RunId}'.");
 
-        var snapshot = OwnPokemonSnapshot.Create(request.BattleId, request.Species, request.Level, request.Stats, request.EVs);
+        var snapshot = OwnPokemonSnapshot.Create(
+            request.BattleId,
+            request.Species,
+            request.Level,
+            PokemonStats.FromJson(request.Stats),
+            EffortValues.FromJson(request.EVs));
         var saved = await repository.SaveSnapshotAsync(snapshot, request.RunId, cancellationToken);
-        return new OwnPokemonSnapshotDto(saved.Id, saved.BattleId, saved.Species, saved.Level, saved.Stats, saved.EVs);
+        return new OwnPokemonSnapshotDto(saved.Id, saved.BattleId, saved.Species, saved.Level, saved.Stats.ToJson(), saved.EVs.ToJson());
     }
 }

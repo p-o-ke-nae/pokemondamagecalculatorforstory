@@ -9,7 +9,10 @@ public sealed class ProjectPartyStateQueryHandler(IBattleRepository repository) 
     public async Task<PartyStateDto> Handle(ProjectPartyStateQuery request, CancellationToken cancellationToken)
     {
         var snapshots = await repository.ListSnapshotsByRunAsync(request.RunId, cancellationToken);
-        var dtos = snapshots.Select(snapshot => new OwnPokemonSnapshotDto(snapshot.Id, snapshot.BattleId, snapshot.Species, snapshot.Level, snapshot.Stats, snapshot.EVs)).ToList().AsReadOnly();
+        var dtos = snapshots
+            .Select(snapshot => new OwnPokemonSnapshotDto(snapshot.Id, snapshot.BattleId, snapshot.Species, snapshot.Level, snapshot.Stats.ToJson(), snapshot.EVs.ToJson()))
+            .ToList()
+            .AsReadOnly();
         return new PartyStateDto(request.RunId, dtos);
     }
 }

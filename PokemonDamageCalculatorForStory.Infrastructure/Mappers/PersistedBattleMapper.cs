@@ -1,5 +1,6 @@
 using System.Text.Json;
 using PokemonDamageCalculatorForStory.Domain.Entities;
+using PokemonDamageCalculatorForStory.Domain.ValueObjects;
 using PokemonDamageCalculatorForStory.Infrastructure.Data.Models;
 
 namespace PokemonDamageCalculatorForStory.Infrastructure.Mappers;
@@ -19,7 +20,13 @@ public static class PersistedBattleMapper
         };
 
     public static OwnPokemonSnapshot ToDomainSnapshot(this PersistedOwnPokemonSnapshot persisted)
-        => OwnPokemonSnapshot.Restore(persisted.Id, persisted.BattleId, persisted.Species, persisted.Level, persisted.Stats, persisted.EVs);
+        => OwnPokemonSnapshot.Restore(
+            persisted.Id,
+            persisted.BattleId,
+            persisted.Species,
+            persisted.Level,
+            PokemonStats.FromJson(persisted.Stats),
+            EffortValues.FromJson(persisted.EVs));
 
     public static PersistedOwnPokemonSnapshot ToPersistedSnapshot(this OwnPokemonSnapshot entity, Guid runId)
         => new()
@@ -29,8 +36,8 @@ public static class PersistedBattleMapper
             BattleId = entity.BattleId,
             Species = entity.Species,
             Level = entity.Level,
-            Stats = entity.Stats,
-            EVs = entity.EVs
+            Stats = entity.Stats.ToJson(),
+            EVs = entity.EVs.ToJson()
         };
 
     public static CalculationResult ToDomainCalculationResult(this PersistedCalculationResult persisted)

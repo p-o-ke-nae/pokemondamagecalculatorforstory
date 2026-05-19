@@ -244,4 +244,4 @@ record OwnPokemonSnapshotDto(Guid Id, Guid BattleId, string Species, int Level, 
 | `CreateBattleCommandValidator` | EnemyPokemon 必須、Sequence ≥ 1 |
 | `UpdateBattleCommandValidator` | EnemyPokemon 必須、Sequence ≥ 1 |
 | `CalculateDamageCommandValidator` | RunId/BattleId 非空、AttackerLevel 1-100、AttackStat/MovePower/DefenseStat ≥ 1、TypeEffectiveness > 0 |
-| `AddProgressionEventCommandValidator` | RunId/BattleId 非空、Species 必須・100 文字以内、Level 1-100、Stats/EVs 必須 |
+| `AddProgressionEventCommandValidator` | RunId/BattleId 非空（Species/Level/Stats/EVs の整合性は Domain で検証） |

@@ -9,8 +9,5 @@ public sealed class AddProgressionEventCommandValidator : AbstractValidator<AddP
     {
         RuleFor(x => x.RunId).NotEmpty();
         RuleFor(x => x.BattleId).NotEmpty();
-        RuleFor(x => x.Species).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Stats).NotEmpty();
-        RuleFor(x => x.EVs).NotEmpty();
     }
 }
