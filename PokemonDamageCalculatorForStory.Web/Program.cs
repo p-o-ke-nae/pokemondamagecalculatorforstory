@@ -5,6 +5,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using PokemonDamageCalculatorForStory.Application.Authorization;
+using PokemonDamageCalculatorForStory.Application.Behaviors;
 using PokemonDamageCalculatorForStory.Application.UseCases.Commands;
 using PokemonDamageCalculatorForStory.Application.Validators;
 using PokemonDamageCalculatorForStory.Authentication;
@@ -62,6 +63,8 @@ builder.Services.AddMediatR(cfg =>
     cfg.RegisterServicesFromAssembly(typeof(CreateRunCommand).Assembly));
 
 builder.Services.AddValidatorsFromAssembly(typeof(CreateRunCommandValidator).Assembly);
+
+builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
 
 builder.Services.AddScoped<IRuleSetRepository, RuleSetRepository>();
 builder.Services.AddScoped<IRunRepository, RunRepository>();
