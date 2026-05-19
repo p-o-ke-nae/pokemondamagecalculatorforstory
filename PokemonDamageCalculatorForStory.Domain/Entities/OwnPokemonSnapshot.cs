@@ -11,8 +11,8 @@ public sealed class OwnPokemonSnapshot
     public Guid BattleId { get; private set; }
     public string Species { get; private set; } = string.Empty;
     public int Level { get; private set; }
-    public SpeciesBaseStats BaseStats { get; private set; }
-    public IndividualValues IVs { get; private set; }
+    public SpeciesBaseStats? BaseStats { get; private set; }
+    public IndividualValues? IVs { get; private set; }
     public PokemonStats Stats { get; private set; }
     public EffortValues EVs { get; private set; }
 
@@ -66,7 +66,7 @@ public sealed class OwnPokemonSnapshot
     /// <param name="stats">実数値。</param>
     /// <param name="eVs">努力値。</param>
     /// <returns>復元されたスナップショット。</returns>
-    public static OwnPokemonSnapshot Restore(Guid id, Guid battleId, string species, int level, SpeciesBaseStats baseStats, IndividualValues iVs, PokemonStats stats, EffortValues eVs)
+    public static OwnPokemonSnapshot Restore(Guid id, Guid battleId, string species, int level, SpeciesBaseStats? baseStats, IndividualValues? iVs, PokemonStats stats, EffortValues eVs)
     {
         return new OwnPokemonSnapshot
         {

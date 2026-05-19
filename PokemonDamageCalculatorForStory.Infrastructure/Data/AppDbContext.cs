@@ -63,8 +63,8 @@ public class AppDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Species).HasMaxLength(100).IsRequired();
-            entity.Property(e => e.BaseStats).HasMaxLength(500).IsRequired();
-            entity.Property(e => e.IVs).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.BaseStats).HasMaxLength(500);
+            entity.Property(e => e.IVs).HasMaxLength(500);
             entity.Property(e => e.Stats).HasMaxLength(500).IsRequired();
             entity.Property(e => e.EVs).HasMaxLength(500).IsRequired();
             entity.HasIndex(e => e.RunId);

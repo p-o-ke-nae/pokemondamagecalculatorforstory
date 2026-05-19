@@ -58,7 +58,24 @@ public sealed class OwnPokemonSnapshotTests
             PokemonStats.FromJson("{\"Hp\":120,\"Attack\":75,\"Defense\":60,\"SpecialAttack\":70,\"SpecialDefense\":70,\"Speed\":110}"),
             EffortValues.FromJson("{\"Hp\":0,\"Attack\":0,\"Defense\":0,\"SpecialAttack\":0,\"SpecialDefense\":0,\"Speed\":252}"));
 
-        Assert.Equal(35, snapshot.BaseStats.Hp.Value);
-        Assert.Equal(30, snapshot.IVs.Attack.Value);
+        Assert.Equal(35, snapshot.BaseStats!.Value.Hp.Value);
+        Assert.Equal(30, snapshot.IVs!.Value.Attack.Value);
+    }
+
+    [Fact]
+    public void Restore_AllowsUnknownLegacyBaseStatsAndIVs()
+    {
+        var snapshot = OwnPokemonSnapshot.Restore(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "Pikachu",
+            50,
+            null,
+            null,
+            PokemonStats.FromJson("{\"Hp\":120,\"Attack\":75,\"Defense\":60,\"SpecialAttack\":70,\"SpecialDefense\":70,\"Speed\":110}"),
+            EffortValues.FromJson("{\"Hp\":0,\"Attack\":0,\"Defense\":0,\"SpecialAttack\":0,\"SpecialDefense\":0,\"Speed\":252}"));
+
+        Assert.Null(snapshot.BaseStats);
+        Assert.Null(snapshot.IVs);
     }
 }

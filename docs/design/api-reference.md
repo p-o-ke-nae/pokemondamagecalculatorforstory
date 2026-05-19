@@ -171,7 +171,7 @@ Battle を削除する。
 - **認証**: 必須
 - **パスパラメータ**: `runId: Guid`
 - **リクエスト本文**: `AddProgressionEventRequest`
-- **レスポンス**: `200 OK` — `PartyStateDto`
+- **レスポンス**: `200 OK` — `OwnPokemonSnapshotDto`
 
 ---
 
@@ -230,7 +230,9 @@ record CalculationResultDto(
 
 record PartyStateDto(Guid RunId, IReadOnlyList<OwnPokemonSnapshotDto> Pokemon);
 
-record OwnPokemonSnapshotDto(Guid Id, Guid BattleId, string Species, int Level, string BaseStats, string IVs, string Stats, string EVs);
+record OwnPokemonSnapshotDto(Guid Id, Guid BattleId, string Species, int Level, string? BaseStats, string? IVs, string Stats, string EVs);
+
+// 既存の履歴データで種族値・個体値が未保存だった行は BaseStats / IVs が null で返る。
 ```
 
 ---

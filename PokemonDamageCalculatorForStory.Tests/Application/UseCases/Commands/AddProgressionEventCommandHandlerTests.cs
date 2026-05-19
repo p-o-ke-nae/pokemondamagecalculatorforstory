@@ -67,8 +67,8 @@ public sealed class AddProgressionEventCommandHandlerTests
         Assert.Equal("{\"Hp\":35,\"Attack\":55,\"Defense\":40,\"SpecialAttack\":50,\"SpecialDefense\":50,\"Speed\":90}", result.Stats);
         Assert.Equal("{\"Hp\":0,\"Attack\":252,\"Defense\":0,\"SpecialAttack\":0,\"SpecialDefense\":4,\"Speed\":252}", result.EVs);
         Assert.NotNull(repository.SavedSnapshot);
-        Assert.Equal(35, repository.SavedSnapshot!.BaseStats.Hp.Value);
-        Assert.Equal(26, repository.SavedSnapshot.IVs.Speed.Value);
+        Assert.Equal(35, repository.SavedSnapshot!.BaseStats!.Value.Hp.Value);
+        Assert.Equal(26, repository.SavedSnapshot.IVs!.Value.Speed.Value);
         Assert.Equal(55, repository.SavedSnapshot!.Stats.Attack.Value);
         Assert.Equal(252, repository.SavedSnapshot.EVs.Speed.Value);
     }
