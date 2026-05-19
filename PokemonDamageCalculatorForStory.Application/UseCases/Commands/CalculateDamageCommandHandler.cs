@@ -1,8 +1,10 @@
 using System.Text.Json;
 using MediatR;
 using PokemonDamageCalculatorForStory.Application.DTOs;
+using PokemonDamageCalculatorForStory.Domain.Calculations;
 using PokemonDamageCalculatorForStory.Domain.Entities;
 using PokemonDamageCalculatorForStory.Domain.Ports;
+using PokemonDamageCalculatorForStory.Domain.ValueObjects;
 
 namespace PokemonDamageCalculatorForStory.Application.UseCases.Commands;
 
@@ -10,17 +12,13 @@ public sealed class CalculateDamageCommandHandler(IBattleRepository repository) 
 {
     public async Task<CalculationResultDto> Handle(CalculateDamageCommand request, CancellationToken cancellationToken)
     {
-        var levelFactor = (2 * request.AttackerLevel / 5) + 2;
-        var baseDamage = (int)Math.Floor((double)(levelFactor * request.MovePower * request.AttackStat) / request.DefenseStat / 50) + 2;
-
-        var rolls = Enumerable.Range(85, 16)
-            .Select(roll =>
-            {
-                var rolledDamage = (int)Math.Floor(baseDamage * roll / 100.0);
-                var stabbedDamage = (int)Math.Floor(rolledDamage * (request.HasStab ? 1.5 : 1.0));
-                return (int)Math.Floor(stabbedDamage * request.TypeEffectiveness);
-            })
-            .ToArray();
+        var rolls = PokemonDamageFormula.CalculateRolls(
+            PokemonLevel.Create(request.AttackerLevel),
+            AttackStat.Create(request.AttackStat),
+            MovePower.Create(request.MovePower),
+            request.HasStab,
+            DefenseStat.Create(request.DefenseStat),
+            TypeEffectivenessMultiplier.Create(request.TypeEffectiveness));
 
         var attackerParamsJson = JsonSerializer.Serialize(new
         {

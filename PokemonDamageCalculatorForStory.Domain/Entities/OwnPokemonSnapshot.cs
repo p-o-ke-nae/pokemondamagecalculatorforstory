@@ -1,4 +1,5 @@
 using PokemonDamageCalculatorForStory.Domain.Exceptions;
+using PokemonDamageCalculatorForStory.Domain.ValueObjects;
 
 namespace PokemonDamageCalculatorForStory.Domain.Entities;
 
@@ -17,9 +18,10 @@ public sealed class OwnPokemonSnapshot
 
     public static OwnPokemonSnapshot Create(Guid battleId, string species, int level, string stats, string eVs)
     {
+        var validatedLevel = PokemonLevel.Create(level);
+
         if (battleId == Guid.Empty) throw new ValidationException("BattleId is required.");
         if (string.IsNullOrWhiteSpace(species)) throw new ValidationException("Species is required.");
-        if (level <= 0) throw new ValidationException("Level must be greater than zero.");
         if (string.IsNullOrWhiteSpace(stats)) throw new ValidationException("Stats is required.");
         if (string.IsNullOrWhiteSpace(eVs)) throw new ValidationException("EVs is required.");
 
@@ -28,7 +30,7 @@ public sealed class OwnPokemonSnapshot
             Id = Guid.NewGuid(),
             BattleId = battleId,
             Species = species.Trim(),
-            Level = level,
+            Level = validatedLevel.Value,
             Stats = stats.Trim(),
             EVs = eVs.Trim()
         };

@@ -1,6 +1,8 @@
 using FluentValidation;
 using MediatR;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
@@ -10,9 +12,11 @@ using PokemonDamageCalculatorForStory.Application.UseCases.Commands;
 using PokemonDamageCalculatorForStory.Application.Validators;
 using PokemonDamageCalculatorForStory.Authentication;
 using PokemonDamageCalculatorForStory.Authorization;
+using PokemonDamageCalculatorForStory.Domain.Exceptions;
 using PokemonDamageCalculatorForStory.Domain.Ports;
 using PokemonDamageCalculatorForStory.Infrastructure.Data;
 using PokemonDamageCalculatorForStory.Infrastructure.Repositories;
+using DomainValidationException = PokemonDamageCalculatorForStory.Domain.Exceptions.ValidationException;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -77,6 +81,45 @@ if (!app.Environment.IsProduction())
 {
     await applyDatabaseMigrationsAsync(app);
 }
+
+app.UseExceptionHandler(exceptionHandlerApp =>
+{
+    exceptionHandlerApp.Run(async context =>
+    {
+        var exception = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+
+        var problemDetails = exception switch
+        {
+            NotFoundException notFoundException => new ProblemDetails
+            {
+                Status = StatusCodes.Status404NotFound,
+                Title = "Resource not found.",
+                Detail = notFoundException.Message
+            },
+            DomainValidationException validationException => new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "Validation failed.",
+                Detail = validationException.Message
+            },
+            DomainException domainException => new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "Domain rule violated.",
+                Detail = domainException.Message
+            },
+            _ => new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "An unexpected error occurred."
+            }
+        };
+
+        context.Response.StatusCode = problemDetails.Status ?? StatusCodes.Status500InternalServerError;
+        context.Response.ContentType = "application/problem+json";
+        await context.Response.WriteAsJsonAsync(problemDetails);
+    });
+});
 
 if (app.Environment.IsDevelopment())
 {
