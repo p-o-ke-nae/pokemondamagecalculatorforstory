@@ -19,6 +19,8 @@ public sealed class OwnPokemonSnapshotTests
                 battleId,
                 "Pikachu",
                 level,
+                SpeciesBaseStats.FromJson("{\"Hp\":35,\"Attack\":55,\"Defense\":40,\"SpecialAttack\":50,\"SpecialDefense\":50,\"Speed\":90}"),
+                IndividualValues.FromJson("{\"Hp\":31,\"Attack\":31,\"Defense\":31,\"SpecialAttack\":31,\"SpecialDefense\":31,\"Speed\":31}"),
                 PokemonStats.FromJson("{\"Hp\":35,\"Attack\":55,\"Defense\":40,\"SpecialAttack\":50,\"SpecialDefense\":50,\"Speed\":90}"),
                 EffortValues.FromJson("{\"Hp\":0,\"Attack\":0,\"Defense\":0,\"SpecialAttack\":0,\"SpecialDefense\":0,\"Speed\":252}")));
 
@@ -36,9 +38,27 @@ public sealed class OwnPokemonSnapshotTests
                 battleId,
                 species,
                 50,
+                SpeciesBaseStats.FromJson("{\"Hp\":35,\"Attack\":55,\"Defense\":40,\"SpecialAttack\":50,\"SpecialDefense\":50,\"Speed\":90}"),
+                IndividualValues.FromJson("{\"Hp\":31,\"Attack\":31,\"Defense\":31,\"SpecialAttack\":31,\"SpecialDefense\":31,\"Speed\":31}"),
                 PokemonStats.FromJson("{\"Hp\":35,\"Attack\":55,\"Defense\":40,\"SpecialAttack\":50,\"SpecialDefense\":50,\"Speed\":90}"),
                 EffortValues.FromJson("{\"Hp\":0,\"Attack\":0,\"Defense\":0,\"SpecialAttack\":0,\"SpecialDefense\":0,\"Speed\":252}")));
 
         Assert.Equal("Species must be 100 characters or fewer.", exception.Message);
+    }
+
+    [Fact]
+    public void Create_AssignsBaseStatsAndIVs()
+    {
+        var snapshot = OwnPokemonSnapshot.Create(
+            Guid.NewGuid(),
+            "Pikachu",
+            50,
+            SpeciesBaseStats.FromJson("{\"Hp\":35,\"Attack\":55,\"Defense\":40,\"SpecialAttack\":50,\"SpecialDefense\":50,\"Speed\":90}"),
+            IndividualValues.FromJson("{\"Hp\":31,\"Attack\":30,\"Defense\":29,\"SpecialAttack\":28,\"SpecialDefense\":27,\"Speed\":26}"),
+            PokemonStats.FromJson("{\"Hp\":120,\"Attack\":75,\"Defense\":60,\"SpecialAttack\":70,\"SpecialDefense\":70,\"Speed\":110}"),
+            EffortValues.FromJson("{\"Hp\":0,\"Attack\":0,\"Defense\":0,\"SpecialAttack\":0,\"SpecialDefense\":0,\"Speed\":252}"));
+
+        Assert.Equal(35, snapshot.BaseStats.Hp.Value);
+        Assert.Equal(30, snapshot.IVs.Attack.Value);
     }
 }

@@ -202,6 +202,8 @@ record AddProgressionEventRequest(
     Guid BattleId,
     string Species,
     int Level,
+    string BaseStats, // JSON 文字列（例: {"Hp":35,"Attack":55,...}）
+    string IVs,       // JSON 文字列（例: {"Hp":31,"Attack":31,...}）
     string Stats,    // JSON 文字列（例: {"Hp":200,"Attack":100,...}）
     string EVs       // JSON 文字列（例: {"Hp":0,"Attack":252,...}）
 );
@@ -228,7 +230,7 @@ record CalculationResultDto(
 
 record PartyStateDto(Guid RunId, IReadOnlyList<OwnPokemonSnapshotDto> Pokemon);
 
-record OwnPokemonSnapshotDto(Guid Id, Guid BattleId, string Species, int Level, string Stats, string EVs);
+record OwnPokemonSnapshotDto(Guid Id, Guid BattleId, string Species, int Level, string BaseStats, string IVs, string Stats, string EVs);
 ```
 
 ---
@@ -244,4 +246,4 @@ record OwnPokemonSnapshotDto(Guid Id, Guid BattleId, string Species, int Level, 
 | `CreateBattleCommandValidator` | EnemyPokemon 必須、Sequence ≥ 1 |
 | `UpdateBattleCommandValidator` | EnemyPokemon 必須、Sequence ≥ 1 |
 | `CalculateDamageCommandValidator` | RunId/BattleId 非空、AttackerLevel 1-100、AttackStat/MovePower/DefenseStat ≥ 1、TypeEffectiveness > 0 |
-| `AddProgressionEventCommandValidator` | RunId/BattleId 非空（Species/Level/Stats/EVs の整合性は Domain で検証） |
+| `AddProgressionEventCommandValidator` | RunId/BattleId 非空（Species/Level/BaseStats/IVs/Stats/EVs の整合性は Domain で検証） |

@@ -59,7 +59,7 @@ public sealed class RunsController(IMediator mediator) : ControllerBase
     [Authorize]
     public async Task<IActionResult> AddProgressionEvent(Guid runId, [FromBody] AddProgressionEventRequest request, CancellationToken cancellationToken)
     {
-        var result = await mediator.Send(new AddProgressionEventCommand(runId, request.BattleId, request.Species, request.Level, request.Stats, request.EVs), cancellationToken);
+        var result = await mediator.Send(new AddProgressionEventCommand(runId, request.BattleId, request.Species, request.Level, request.BaseStats, request.IVs, request.Stats, request.EVs), cancellationToken);
         return Ok(result);
     }
 }

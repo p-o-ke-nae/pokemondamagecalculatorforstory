@@ -182,6 +182,8 @@ public sealed class CalculationResult
 | `BattleId` | `Guid` | 対応する Battle | 空 Guid 禁止 |
 | `Species` | `string` | ポケモン種族名 | 空白禁止・100 文字以内 |
 | `Level` | `int` | レベル | 1〜100 |
+| `BaseStats` | `SpeciesBaseStats` | 種族値（HP/攻撃/防御/特攻/特防/素早さ） | 全 6 項目必須・各値 1〜255 |
+| `IVs` | `IndividualValues` | 個体値（HP/攻撃/防御/特攻/特防/素早さ） | 全 6 項目必須・各値 0〜31 |
 | `Stats` | `PokemonStats` | 実数値（HP/攻撃/防御/特攻/特防/素早さ） | 全 6 項目必須・各値 1 以上 |
 | `EVs` | `EffortValues` | 努力値（HP/攻撃/防御/特攻/特防/素早さ） | 全 6 項目必須・各値 0〜252・合計 510 以下 |
 
@@ -192,13 +194,15 @@ public sealed class OwnPokemonSnapshot
     public Guid BattleId { get; private set; }
     public string Species { get; private set; } = string.Empty;
     public int Level { get; private set; }
+    public SpeciesBaseStats BaseStats { get; private set; }
+    public IndividualValues IVs { get; private set; }
     public PokemonStats Stats { get; private set; }
     public EffortValues EVs { get; private set; }
 
     private OwnPokemonSnapshot() { }
 
-    public static OwnPokemonSnapshot Create(Guid battleId, string species, int level, PokemonStats stats, EffortValues eVs) { ... }
-    public static OwnPokemonSnapshot Restore(Guid id, Guid battleId, string species, int level, PokemonStats stats, EffortValues eVs) { ... }
+    public static OwnPokemonSnapshot Create(Guid battleId, string species, int level, SpeciesBaseStats baseStats, IndividualValues iVs, PokemonStats stats, EffortValues eVs) { ... }
+    public static OwnPokemonSnapshot Restore(Guid id, Guid battleId, string species, int level, SpeciesBaseStats baseStats, IndividualValues iVs, PokemonStats stats, EffortValues eVs) { ... }
 }
 ```
 
@@ -362,9 +366,11 @@ classDiagram
         +Guid BattleId
         +string Species
         +int Level
+        +SpeciesBaseStats BaseStats
+        +IndividualValues IVs
         +PokemonStats Stats
         +EffortValues EVs
-        +Create(battleId, species, level, stats, eVs) OwnPokemonSnapshot
+        +Create(battleId, species, level, baseStats, iVs, stats, eVs) OwnPokemonSnapshot
         +Restore(id, battleId, ...) OwnPokemonSnapshot
     }
 

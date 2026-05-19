@@ -19,9 +19,11 @@ public sealed class AddProgressionEventCommandHandler(IBattleRepository reposito
             request.BattleId,
             request.Species,
             request.Level,
+            SpeciesBaseStats.FromJson(request.BaseStats),
+            IndividualValues.FromJson(request.IVs),
             PokemonStats.FromJson(request.Stats),
             EffortValues.FromJson(request.EVs));
         var saved = await repository.SaveSnapshotAsync(snapshot, request.RunId, cancellationToken);
-        return new OwnPokemonSnapshotDto(saved.Id, saved.BattleId, saved.Species, saved.Level, saved.Stats.ToJson(), saved.EVs.ToJson());
+        return new OwnPokemonSnapshotDto(saved.Id, saved.BattleId, saved.Species, saved.Level, saved.BaseStats.ToJson(), saved.IVs.ToJson(), saved.Stats.ToJson(), saved.EVs.ToJson());
     }
 }

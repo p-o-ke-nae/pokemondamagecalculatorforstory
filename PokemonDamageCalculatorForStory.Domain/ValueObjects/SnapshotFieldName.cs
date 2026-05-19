@@ -28,6 +28,8 @@ internal static class SnapshotFieldName
     internal static string GetGroupName(SnapshotValueGroup group)
         => group switch
         {
+            SnapshotValueGroup.BaseStats => "BaseStats",
+            SnapshotValueGroup.IVs => "IVs",
             SnapshotValueGroup.Stats => "Stats",
             SnapshotValueGroup.EVs => "EVs",
             _ => throw new ArgumentOutOfRangeException(nameof(group), group, null)

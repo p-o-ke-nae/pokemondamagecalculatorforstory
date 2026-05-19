@@ -25,6 +25,8 @@ public static class PersistedBattleMapper
             persisted.BattleId,
             persisted.Species,
             persisted.Level,
+            SpeciesBaseStats.FromJson(persisted.BaseStats),
+            IndividualValues.FromJson(persisted.IVs),
             PokemonStats.FromJson(persisted.Stats),
             EffortValues.FromJson(persisted.EVs));
 
@@ -36,6 +38,8 @@ public static class PersistedBattleMapper
             BattleId = entity.BattleId,
             Species = entity.Species,
             Level = entity.Level,
+            BaseStats = entity.BaseStats.ToJson(),
+            IVs = entity.IVs.ToJson(),
             Stats = entity.Stats.ToJson(),
             EVs = entity.EVs.ToJson()
         };

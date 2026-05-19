@@ -31,6 +31,26 @@ public sealed class AddProgressionEventCommandHandlerTests
             """,
             """
             {
+              "Attack": 31,
+              "Hp": 30,
+              "Defense": 29,
+              "SpecialDefense": 27,
+              "Speed": 26,
+              "SpecialAttack": 28
+            }
+            """,
+            """
+            {
+              "Attack": 55,
+              "Hp": 35,
+              "Defense": 40,
+              "SpecialDefense": 50,
+              "Speed": 90,
+              "SpecialAttack": 50
+            }
+            """,
+            """
+            {
               "Attack": 252,
               "Hp": 0,
               "Defense": 0,
@@ -42,9 +62,13 @@ public sealed class AddProgressionEventCommandHandlerTests
 
         var result = await handler.Handle(command, CancellationToken.None);
 
+        Assert.Equal("{\"Hp\":35,\"Attack\":55,\"Defense\":40,\"SpecialAttack\":50,\"SpecialDefense\":50,\"Speed\":90}", result.BaseStats);
+        Assert.Equal("{\"Hp\":30,\"Attack\":31,\"Defense\":29,\"SpecialAttack\":28,\"SpecialDefense\":27,\"Speed\":26}", result.IVs);
         Assert.Equal("{\"Hp\":35,\"Attack\":55,\"Defense\":40,\"SpecialAttack\":50,\"SpecialDefense\":50,\"Speed\":90}", result.Stats);
         Assert.Equal("{\"Hp\":0,\"Attack\":252,\"Defense\":0,\"SpecialAttack\":0,\"SpecialDefense\":4,\"Speed\":252}", result.EVs);
         Assert.NotNull(repository.SavedSnapshot);
+        Assert.Equal(35, repository.SavedSnapshot!.BaseStats.Hp.Value);
+        Assert.Equal(26, repository.SavedSnapshot.IVs.Speed.Value);
         Assert.Equal(55, repository.SavedSnapshot!.Stats.Attack.Value);
         Assert.Equal(252, repository.SavedSnapshot.EVs.Speed.Value);
     }

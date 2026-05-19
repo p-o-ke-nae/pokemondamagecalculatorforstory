@@ -7,6 +7,60 @@ namespace PokemonDamageCalculatorForStory.Tests.Domain.ValueObjects;
 public sealed class PokemonSnapshotValueObjectsTests
 {
     [Fact]
+    public void SpeciesBaseStats_FromJson_ReturnsCanonicalJson()
+    {
+        var stats = SpeciesBaseStats.FromJson(
+            """
+            {
+              "Attack": 55,
+              "Hp": 35,
+              "Defense": 40,
+              "SpecialDefense": 50,
+              "Speed": 90,
+              "SpecialAttack": 50
+            }
+            """);
+
+        Assert.Equal("{\"Hp\":35,\"Attack\":55,\"Defense\":40,\"SpecialAttack\":50,\"SpecialDefense\":50,\"Speed\":90}", stats.ToJson());
+    }
+
+    [Fact]
+    public void SpeciesBaseStats_FromJson_Throws_WhenValueIsOutsideSupportedRange()
+    {
+        var exception = Assert.Throws<ValidationException>(() =>
+            SpeciesBaseStats.FromJson("{\"Hp\":0,\"Attack\":55,\"Defense\":40,\"SpecialAttack\":50,\"SpecialDefense\":50,\"Speed\":90}"));
+
+        Assert.Equal("BaseStats.Hp must be between 1 and 255.", exception.Message);
+    }
+
+    [Fact]
+    public void IndividualValues_FromJson_ReturnsCanonicalJson()
+    {
+        var values = IndividualValues.FromJson(
+            """
+            {
+              "Attack": 31,
+              "Hp": 30,
+              "Defense": 29,
+              "SpecialDefense": 27,
+              "Speed": 26,
+              "SpecialAttack": 28
+            }
+            """);
+
+        Assert.Equal("{\"Hp\":30,\"Attack\":31,\"Defense\":29,\"SpecialAttack\":28,\"SpecialDefense\":27,\"Speed\":26}", values.ToJson());
+    }
+
+    [Fact]
+    public void IndividualValues_FromJson_Throws_WhenValueExceedsPerStatLimit()
+    {
+        var exception = Assert.Throws<ValidationException>(() =>
+            IndividualValues.FromJson("{\"Hp\":31,\"Attack\":32,\"Defense\":31,\"SpecialAttack\":31,\"SpecialDefense\":31,\"Speed\":31}"));
+
+        Assert.Equal("IVs.Attack must be between 0 and 31.", exception.Message);
+    }
+
+    [Fact]
     public void PokemonStats_FromJson_ReturnsCanonicalJson()
     {
         var stats = PokemonStats.FromJson(

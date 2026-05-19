@@ -156,7 +156,7 @@ Query は読み取り操作を担う。副作用なし（idempotent）。
 | `CreateBattleCommandValidator` | `CreateBattleCommand` | Sequence ≥ 1、EnemyPokemon 各値必須・範囲チェック |
 | `UpdateBattleCommandValidator` | `UpdateBattleCommand` | Sequence ≥ 1、EnemyPokemon 各値必須・範囲チェック |
 | `CalculateDamageCommandValidator` | `CalculateDamageCommand` | Level 1-100、Attack/Defense ≥ 1、MovePower ≥ 1、MoveCategory 有効値、TypeEffectiveness 有効倍率 |
-| `AddProgressionEventCommandValidator` | `AddProgressionEventCommand` | RunId / BattleId 必須（Stats / EVs / Level / Species の整合性は Domain で検証） |
+| `AddProgressionEventCommandValidator` | `AddProgressionEventCommand` | RunId / BattleId 必須（BaseStats / IVs / Stats / EVs / Level / Species の整合性は Domain で検証） |
 
 ### ValidationBehavior の適用方針
 
