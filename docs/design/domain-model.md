@@ -7,14 +7,14 @@
 
 ## 概要
 
-本ドキュメントは、Phase 2 で管理対象となる主要ドメインモデルの設計骨子を整理する。
+本ドキュメントは、管理マスタ保守機能で扱う主要ドメインモデルの実装内容を整理する。
 
 ### 対象エンティティ
 
 | Entity | 役割 |
 |--------|------|
 | `RuleSet` | 公開利用されるダメージ計算ルールを表すマスタ |
-| `UserAuthorizationInfo` | 管理 UI / 管理 API の role 情報を表す認可マスタ |
+| `UserAuthorizationInfo` | 管理 UI / 管理 API の role と permission 文字列を保持する認可マスタ |
 
 ---
 
@@ -24,9 +24,9 @@
 
 - 世代別ダメージ計算ルールを管理する
 - 公開 API では `Active` のみ参照可能
-- 管理 API では全状態を作成・更新・削除対象とする
+- 管理 API / UI では全状態を作成・更新・削除対象とする
 
-### 1-2. 想定プロパティ
+### 1-2. プロパティ
 
 | プロパティ | 型 | 注記 |
 |-----------|-----|------|
@@ -36,14 +36,16 @@
 | `Title` | `string` | 表示名 |
 | `Version` | `string` | バージョン |
 | `Status` | `string` | `Active` / `Draft` / `Archived` |
-| `Summary` | `string` | 概要 |
+| `Summary` | `string` | 概要。空文字可 |
 
 ### 1-3. 不変条件
 
-- `Slug`, `Title`, `Version` は空不可
+- `Slug` は空不可、100 文字以下
 - `Generation` は 1 以上
+- `Title` は空不可、200 文字以下
+- `Version` は空不可、50 文字以下
 - `Status` は `Active` / `Draft` / `Archived` のみ
-- 更新時も同じ不変条件を維持する
+- `Summary` は 500 文字以下
 
 ### 1-4. 削除ルール
 
@@ -56,36 +58,34 @@
 
 ### 2-1. 役割
 
-- Google ユーザーの管理権限を保持する
-- 管理機能の allow/deny は Phase 2 では `Role` のみで判定する
-- `Permissions[]` は保存・表示対象とし、role と矛盾しない catalog 値のみ保持する
+- Google ユーザーの管理権限情報を保持する
+- 管理機能の allow/deny は `Role` に基づく policy で判定する
+- `Permissions[]` は保存・表示対象であり、認可判定の正規ソースではない
 
-### 2-2. 想定プロパティ
+### 2-2. プロパティ
 
 | プロパティ | 型 | 注記 |
 |-----------|-----|------|
 | `GoogleUserId` | `string` | 識別子 |
-| `Role` | `string` | `Administrator` / `MasterEditor` / `Member` |
-| `Permissions` | `IReadOnlyCollection<string>` | 許可済み権限文字列 (`masters.view`, `masters.rulesets.manage`, `masters.user-authorizations.manage`) |
+| `Role` | `string` | role 名。Domain では非空のみ保証 |
+| `Permissions` | `IReadOnlyCollection<string>` | permission 文字列。空コレクション可 |
 
 ### 2-3. 不変条件
 
 - `GoogleUserId` は空不可
-- `Role` は定義済み 3 値のみ
-- `Permissions` は null 不可
-- `Permissions` は catalog 定義済み値のみ
+- `Role` は空不可
+- `Permissions` の各要素は空白不可
 - `Permissions` の重複は拒否する
-- `Permissions` は `Role` に対応する許容範囲を超えてはならない
 
-### 2-4. Permission Catalog と role 整合
+### 2-4. Application 層で補う制約
 
-| Role | 保持可能な Permission |
-|------|------------------------|
-| `Administrator` | `masters.view`, `masters.rulesets.manage`, `masters.user-authorizations.manage` |
-| `MasterEditor` | `masters.view`, `masters.rulesets.manage` |
-| `Member` | `masters.view` |
+| 項目 | 実装場所 |
+|------|----------|
+| role を `Administrator` / `MasterEditor` / `Member` に限定 | admin command validator |
+| permission を catalog 値に限定 | admin command validator |
+| 最後の `Administrator` の role 変更/削除保護 | admin command handler + repository |
 
-> これらの permission は UI 表示や将来拡張用の catalog であり、Phase 2 の認可判定自体は role-based policy が担う。
+> `permissions` の role ごとの部分集合制約は、現行実装では Domain / Validator のどちらでも強制していない。
 
 ### 2-5. 保護ルール
 
@@ -103,13 +103,11 @@
 | `MasterEditor` | RuleSet のみ |
 | `Member` | 管理機能なし |
 
-> ロール階層は認可ポリシーで利用する。Domain は role の妥当性のみを保持する。
-
 ### 3-1. role-based authorization との整合
 
 - `Administrator > MasterEditor > Member` の階層を認可の正規ソースとする
-- `Permissions[]` は role より強い権限を付与できない
-- policy 判定は role を参照し、permission catalog はデータ整合性の検証対象として扱う
+- `Permissions[]` は付随データとして保持する
+- policy 判定は role を参照し、permission catalog は入力検証対象として扱う
 
 ---
 
@@ -119,7 +117,7 @@
 |----------|------|
 | `Create(...)` | 新規作成。不変条件を検証する |
 | `Restore(...)` | 永続化済みデータの復元 |
-| `Update...(...)` | 既存エンティティ変更。不変条件を再検証する |
+| `Update(...)` | 既存エンティティ変更。不変条件を再検証する |
 
 ### 4-1. 例
 
@@ -128,7 +126,7 @@ public sealed class RuleSet
 {
     public static RuleSet Create(string slug, int generation, string title, string version, string status, string summary) { ... }
     public static RuleSet Restore(Guid id, string slug, int generation, string title, string version, string status, string summary) { ... }
-    public void UpdateMetadata(string slug, int generation, string title, string version, string status, string summary) { ... }
+    public void Update(string slug, int generation, string title, string version, string status, string summary) { ... }
 }
 ```
 
@@ -150,13 +148,16 @@ public sealed class UserAuthorizationInfo
 ```csharp
 public interface IRuleSetRepository
 {
-    Task<IReadOnlyList<RuleSet>> ListActiveAsync(CancellationToken ct = default);
-    Task<IReadOnlyList<RuleSet>> ListAllAsync(CancellationToken ct = default);
-    Task<RuleSet?> FindByIdAsync(Guid id, CancellationToken ct = default);
-    Task<bool> ExistsBySlugAsync(string slug, Guid? excludingId = null, CancellationToken ct = default);
-    Task<bool> IsReferencedByRunsAsync(Guid id, CancellationToken ct = default);
-    Task<RuleSet> SaveAsync(RuleSet ruleSet, CancellationToken ct = default);
-    Task<bool> DeleteAsync(Guid id, CancellationToken ct = default);
+    Task<IReadOnlyList<RuleSet>> FindAllAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<RuleSet>> FindAllActiveAsync(CancellationToken cancellationToken = default);
+    Task<RuleSet?> FindByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<RuleSet?> FindActiveByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<bool> ExistsBySlugAsync(string slug, Guid? excludingId = null, CancellationToken cancellationToken = default);
+    Task<bool> IsReferencedByRunsAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<IReadOnlySet<Guid>> FindReferencedRuleSetIdsAsync(CancellationToken cancellationToken = default);
+    Task AddAsync(RuleSet ruleSet, CancellationToken cancellationToken = default);
+    Task UpdateAsync(RuleSet ruleSet, CancellationToken cancellationToken = default);
+    Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
 }
 ```
 
@@ -165,11 +166,13 @@ public interface IRuleSetRepository
 ```csharp
 public interface IUserAuthorizationInfoRepository
 {
-    Task<IReadOnlyList<UserAuthorizationInfo>> ListAllAsync(CancellationToken ct = default);
-    Task<UserAuthorizationInfo?> FindByGoogleUserIdAsync(string googleUserId, CancellationToken ct = default);
-    Task<bool> IsLastAdministratorAsync(string googleUserId, CancellationToken ct = default);
-    Task<UserAuthorizationInfo> SaveAsync(UserAuthorizationInfo entity, CancellationToken ct = default);
-    Task<bool> DeleteAsync(string googleUserId, CancellationToken ct = default);
+    Task<IReadOnlyList<UserAuthorizationInfo>> FindAllAsync(CancellationToken cancellationToken = default);
+    Task<UserAuthorizationInfo?> FindByGoogleUserIdAsync(string googleUserId, CancellationToken cancellationToken = default);
+    Task<bool> ExistsByGoogleUserIdAsync(string googleUserId, CancellationToken cancellationToken = default);
+    Task<int> CountByRoleAsync(string role, CancellationToken cancellationToken = default);
+    Task AddAsync(UserAuthorizationInfo userAuthorizationInfo, CancellationToken cancellationToken = default);
+    Task UpdateAsync(UserAuthorizationInfo userAuthorizationInfo, CancellationToken cancellationToken = default);
+    Task DeleteAsync(string googleUserId, CancellationToken cancellationToken = default);
 }
 ```
 
@@ -179,15 +182,15 @@ public interface IUserAuthorizationInfoRepository
 
 | 項目 | 保持場所 | 理由 |
 |------|----------|------|
-| `isReferencedByRuns` | Application / DTO | 集計結果であり Entity の本質属性ではない |
-| `isLastAdministrator` | Application / DTO | 一覧/詳細表示用の派生情報 |
+| `isReferencedByRuns` | Application / DTO | Run 集計結果であり Entity の本質属性ではない |
+| `isLastAdministrator` | Application / DTO | `CountByRoleAsync()` に基づく表示用派生情報 |
 | Admin audit log | Application / Infrastructure | 横断的な証跡であり Entity の本質属性ではない |
 
 ---
 
 ## 7. 実装注記
 
-- `Permissions[]` は Phase 2 では認可判定に使わない
-- permission catalog の正規値は `AppPermissions` 等に集約し、文字列リテラルの散在を避ける
+- `Permissions[]` は認可判定に使わない
+- permission catalog の正規値は `AppPermissions` に集約する
 - 公開 API の `Active` フィルタは Application Query 側で明示する
-- repository 実装では重複判定・参照判定・最後の Administrator 判定を一貫して扱う
+- repository 実装では重複判定・参照判定・管理者件数集計を一貫して扱う
