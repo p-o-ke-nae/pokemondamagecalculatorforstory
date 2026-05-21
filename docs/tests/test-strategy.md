@@ -83,8 +83,10 @@
 |---------|----------|
 | `GET /admin/login` | `200` |
 | `POST /admin/login` に有効 token | `302` で管理画面へ遷移 |
+| 未認証で `/admin/masters/*` | `/admin/login` へ redirect |
 | `MasterEditor` で RuleSet 画面 | `200` |
-| `MasterEditor` で UserAuthorization 画面 | `/admin/login` へ redirect |
+| `MasterEditor` で UserAuthorization 画面 | `403` |
+| `Member` / 未登録ユーザーで管理 UI | `403` |
 | `Administrator` で UserAuthorization 画面 | `200` |
 
 ---
@@ -95,9 +97,9 @@
 |------|--------------|
 | ログイン画面 | access token 入力、失敗時 validation summary |
 | RuleSet 一覧 | 表示、クライアント側検索、編集導線 |
-| RuleSet 新規/編集 | 保存成功、重複/参照中エラー表示、参照中時の削除無効化 |
+| RuleSet 新規/編集 | 保存成功、項目単位 + 要約エラー表示、未保存変更警告、重複/参照中エラー表示、参照中時の削除無効化 |
 | UserAuthorization 一覧 | 表示、クライアント側検索、編集導線 |
-| UserAuthorization 新規/編集 | role 更新、permissions チェックボックス、last-admin エラー表示 |
+| UserAuthorization 新規/編集 | role 更新、permissions チェックボックス、項目単位 + 要約エラー表示、未保存変更警告、last-admin エラー表示 |
 | レイアウト | role ごとのナビ表示差分、logout 動線 |
 
 ---

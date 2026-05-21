@@ -4,40 +4,44 @@
 }
 <div class="card">
     <h1>@Model.Heading</h1>
-    @Html.ValidationSummary()
+    @Html.ValidationSummary(excludePropertyErrors: false)
     @if (Model.IsLastAdministrator)
     {
         <p class="warning">このレコードは最後の Administrator です。Role 変更や削除はできません。</p>
     }
-    <form method="post" action="@(string.IsNullOrWhiteSpace(Model.GoogleUserId) ? "/admin/masters/user-authorizations/new" : $"/admin/masters/user-authorizations/{Model.GoogleUserId}")">
+    <form method="post" action="@(string.IsNullOrWhiteSpace(Model.GoogleUserId) ? "/admin/masters/user-authorizations/new" : $"/admin/masters/user-authorizations/{Model.GoogleUserId}")" data-unsaved-warning="true">
         @Html.AntiForgeryToken()
         @if (string.IsNullOrWhiteSpace(Model.GoogleUserId))
         {
             <label>Google User ID</label>
-            <input type="text" name="googleUserId" value="@Model.Form.GoogleUserId" />
+            <input type="text" name="GoogleUserId" value="@Model.Form.GoogleUserId" maxlength="128" required />
         }
         else
         {
+            <input type="hidden" name="GoogleUserId" value="@Model.GoogleUserId" />
             <label>Google User ID</label>
             <input type="text" value="@Model.GoogleUserId" disabled />
         }
+        @Html.ValidationMessage("GoogleUserId")
         <label>Role</label>
-        <select name="role">
+        <select name="Role" required>
             @foreach (var role in Model.RoleOptions)
             {
                 <option value="@role" selected="@(role == Model.Form.Role ? "selected" : null)">@role</option>
             }
         </select>
+        @Html.ValidationMessage("Role")
         <label>Permissions</label>
         <div class="checkbox-list">
             @foreach (var permission in Model.PermissionOptions)
             {
                 <label>
-                    <input type="checkbox" name="permissions" value="@permission" checked="@(Model.Form.Permissions.Contains(permission) ? "checked" : null)" />
+                    <input type="checkbox" name="Permissions" value="@permission" checked="@(Model.Form.Permissions.Contains(permission) ? "checked" : null)" />
                     @permission
                 </label>
             }
         </div>
+        @Html.ValidationMessage("Permissions")
         <div class="actions">
             <button type="submit">保存</button>
             <a href="/admin/masters/user-authorizations">一覧へ戻る</a>

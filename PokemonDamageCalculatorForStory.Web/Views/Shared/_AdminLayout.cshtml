@@ -12,6 +12,7 @@
         .card { background: white; border-radius: 8px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 16px; }
         .flash-success { background: #ecfdf5; color: #065f46; padding: 12px; border-radius: 6px; margin-bottom: 16px; }
         .flash-error, .validation-summary-errors { background: #fef2f2; color: #991b1b; padding: 12px; border-radius: 6px; margin-bottom: 16px; }
+        .field-validation-error { color: #991b1b; display: block; margin-top: 4px; }
         table { width: 100%; border-collapse: collapse; }
         th, td { border-bottom: 1px solid #e5e7eb; padding: 8px; text-align: left; vertical-align: top; }
         label { display: block; font-weight: 600; margin-top: 12px; }
@@ -53,5 +54,30 @@
     }
     @RenderBody()
 </main>
+<script>
+(() => {
+    const form = document.querySelector('form[data-unsaved-warning="true"]');
+    if (!form) {
+        return;
+    }
+
+    const serialize = () => new URLSearchParams(new FormData(form)).toString();
+    const initialState = serialize();
+    let isSubmitting = false;
+
+    form.addEventListener('submit', () => {
+        isSubmitting = true;
+    });
+
+    window.addEventListener('beforeunload', event => {
+        if (isSubmitting || serialize() === initialState) {
+            return;
+        }
+
+        event.preventDefault();
+        event.returnValue = '';
+    });
+})();
+</script>
 </body>
 </html>

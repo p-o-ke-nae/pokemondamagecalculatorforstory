@@ -31,7 +31,7 @@
 | 公開 API | 匿名可 |
 | 管理 API | Google access token bearer 認証必須 |
 | 認可方式 | role-based policy |
-| UI 補足 | 管理 UI は `POST /admin/login` で access token を検証し、`AdminCookie` を発行する |
+| UI 補足 | 管理 UI は `POST /admin/login` で access token を検証し、`AdminCookie` を発行する。未認証は login へ遷移し、認証済みだが認可不足の UI アクセスは `403 Forbidden` |
 
 ### 1-2. ポリシー
 

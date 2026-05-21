@@ -1,3 +1,4 @@
+using FluentValidation;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,7 +14,10 @@ namespace PokemonDamageCalculatorForStory.Controllers.Admin;
 
 [AutoValidateAntiforgeryToken]
 [Authorize(AuthenticationSchemes = AdminCookieAuthenticationDefaults.AuthenticationScheme, Policy = AppPolicies.ManageBusinessMasters)]
-public sealed class RuleSetAdminPagesController(IMediator mediator) : Controller
+public sealed class RuleSetAdminPagesController(
+    IMediator mediator,
+    IValidator<CreateAdminRuleSetCommand> createValidator,
+    IValidator<UpdateAdminRuleSetCommand> updateValidator) : Controller
 {
     [HttpGet("admin/masters/rule-sets")]
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
@@ -26,16 +30,26 @@ public sealed class RuleSetAdminPagesController(IMediator mediator) : Controller
     [HttpPost("admin/masters/rule-sets/new")]
     public async Task<IActionResult> Create([FromForm] AdminRuleSetUpsertRequest request, CancellationToken cancellationToken)
     {
-        if (!ModelState.IsValid)
+        var command = new CreateAdminRuleSetCommand(
+            User.GetRequiredGoogleUserId(),
+            User.GetRoleOrMember(),
+            request.Slug,
+            request.Generation,
+            request.Title,
+            request.Version,
+            request.Status,
+            request.Summary);
+
+        var validationResult = await createValidator.ValidateAsync(command, cancellationToken);
+        if (!validationResult.IsValid)
         {
+            ModelState.AddValidationFailures(validationResult.Errors);
             return View("Editor", CreateViewModel(null, request, false));
         }
 
         try
         {
-            var created = await mediator.Send(
-                new CreateAdminRuleSetCommand(User.GetRequiredGoogleUserId(), User.GetRoleOrMember(), request.Slug, request.Generation, request.Title, request.Version, request.Status, request.Summary),
-                cancellationToken);
+            var created = await mediator.Send(command, cancellationToken);
 
             TempData["SuccessMessage"] = $"RuleSet '{created.Title}' を作成しました。";
             return RedirectToAction(nameof(Edit), new { id = created.Id });
@@ -65,11 +79,27 @@ public sealed class RuleSetAdminPagesController(IMediator mediator) : Controller
     [HttpPost("admin/masters/rule-sets/{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromForm] AdminRuleSetUpsertRequest request, CancellationToken cancellationToken)
     {
+        var command = new UpdateAdminRuleSetCommand(
+            User.GetRequiredGoogleUserId(),
+            User.GetRoleOrMember(),
+            id,
+            request.Slug,
+            request.Generation,
+            request.Title,
+            request.Version,
+            request.Status,
+            request.Summary);
+
+        var validationResult = await updateValidator.ValidateAsync(command, cancellationToken);
+        if (!validationResult.IsValid)
+        {
+            ModelState.AddValidationFailures(validationResult.Errors);
+            return View("Editor", CreateViewModel(id, request, false));
+        }
+
         try
         {
-            var updated = await mediator.Send(
-                new UpdateAdminRuleSetCommand(User.GetRequiredGoogleUserId(), User.GetRoleOrMember(), id, request.Slug, request.Generation, request.Title, request.Version, request.Status, request.Summary),
-                cancellationToken);
+            var updated = await mediator.Send(command, cancellationToken);
 
             if (updated is null)
             {

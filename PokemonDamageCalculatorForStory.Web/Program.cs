@@ -65,7 +65,11 @@ builder.Services.AddAuthentication(options =>
 .AddCookie(AdminCookieAuthenticationDefaults.AuthenticationScheme, options =>
 {
     options.LoginPath = "/admin/login";
-    options.AccessDeniedPath = "/admin/login";
+    options.Events.OnRedirectToAccessDenied = context =>
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        return Task.CompletedTask;
+    };
 })
 .AddScheme<AuthenticationSchemeOptions, GoogleAccessTokenAuthenticationHandler>(GoogleAuthenticationDefaults.AuthenticationScheme, _ => { });
 

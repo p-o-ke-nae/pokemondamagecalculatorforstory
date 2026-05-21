@@ -23,8 +23,8 @@ public sealed class AdminUiControllerTests
         Assert.Contains("RuleSet 管理", await ruleSetsPage.Content.ReadAsStringAsync());
 
         var userAuthorizationsPage = await client.GetAsync("/admin/masters/user-authorizations");
-        Assert.Equal(HttpStatusCode.Redirect, userAuthorizationsPage.StatusCode);
-        Assert.Contains("/admin/login", userAuthorizationsPage.Headers.Location?.OriginalString);
+        Assert.Equal(HttpStatusCode.Forbidden, userAuthorizationsPage.StatusCode);
+        Assert.Null(userAuthorizationsPage.Headers.Location);
     }
 
     [Fact]
@@ -49,8 +49,8 @@ public sealed class AdminUiControllerTests
         await LoginAsync(client, "editor-token", "/admin/masters/rule-sets");
 
         var beforePromotion = await client.GetAsync("/admin/masters/user-authorizations");
-        Assert.Equal(HttpStatusCode.Redirect, beforePromotion.StatusCode);
-        Assert.Contains("/admin/login", beforePromotion.Headers.Location?.OriginalString);
+        Assert.Equal(HttpStatusCode.Forbidden, beforePromotion.StatusCode);
+        Assert.Null(beforePromotion.Headers.Location);
 
         await UpdateRoleAsync(factory, CustomWebApplicationFactory.MasterEditorGoogleUserId, AppRoles.Administrator);
 
@@ -73,8 +73,48 @@ public sealed class AdminUiControllerTests
         await UpdateRoleAsync(factory, CustomWebApplicationFactory.AdminGoogleUserId, AppRoles.Member);
 
         var afterDemotion = await client.GetAsync("/admin/masters/user-authorizations");
-        Assert.Equal(HttpStatusCode.Redirect, afterDemotion.StatusCode);
-        Assert.Contains("/admin/login", afterDemotion.Headers.Location?.OriginalString);
+        Assert.Equal(HttpStatusCode.Forbidden, afterDemotion.StatusCode);
+        Assert.Null(afterDemotion.Headers.Location);
+    }
+
+    [Fact]
+    public async Task Anonymous_Admin_Ui_Redirects_To_Login()
+    {
+        using var factory = new CustomWebApplicationFactory();
+        var client = factory.CreateClient(new() { AllowAutoRedirect = false });
+
+        var response = await client.GetAsync("/admin/masters/rule-sets");
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Contains("/admin/login", response.Headers.Location?.OriginalString);
+    }
+
+    [Fact]
+    public async Task Member_Admin_Ui_Access_Returns_Forbidden()
+    {
+        using var factory = new CustomWebApplicationFactory();
+        var client = factory.CreateClient(new() { AllowAutoRedirect = false });
+
+        await LoginAsync(client, "member-token", "/admin/masters/rule-sets");
+
+        var response = await client.GetAsync("/admin/masters/rule-sets");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null(response.Headers.Location);
+    }
+
+    [Fact]
+    public async Task Registered_But_Unauthorized_Admin_Ui_Access_Returns_Forbidden()
+    {
+        using var factory = new CustomWebApplicationFactory();
+        var client = factory.CreateClient(new() { AllowAutoRedirect = false });
+
+        await LoginAsync(client, "other-token", "/admin/masters/rule-sets");
+
+        var response = await client.GetAsync("/admin/masters/rule-sets");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null(response.Headers.Location);
     }
 
     [Fact]
@@ -212,6 +252,72 @@ public sealed class AdminUiControllerTests
         var response = await client.PostAsync($"/admin/masters/user-authorizations/{CustomWebApplicationFactory.MasterEditorGoogleUserId}/delete", new FormUrlEncodedContent([]));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task RuleSet_Editor_Shows_FieldLevel_Validation_And_UnsavedChanges_Warning()
+    {
+        using var factory = new CustomWebApplicationFactory();
+        var client = factory.CreateClient(new() { AllowAutoRedirect = false });
+
+        await LoginAsync(client, "editor-token");
+
+        var editorHtml = await (await client.GetAsync("/admin/masters/rule-sets/new")).Content.ReadAsStringAsync();
+        Assert.Contains("data-unsaved-warning=\"true\"", editorHtml);
+        Assert.Contains("beforeunload", editorHtml);
+        Assert.Contains("data-valmsg-for=\"Slug\"", editorHtml);
+
+        var antiForgeryToken = await GetAntiforgeryTokenAsync(client, "/admin/masters/rule-sets/new");
+        var response = await client.PostAsync("/admin/masters/rule-sets/new", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["__RequestVerificationToken"] = antiForgeryToken,
+            ["Slug"] = "",
+            ["Generation"] = "0",
+            ["Title"] = "",
+            ["Version"] = "",
+            ["Status"] = "Active",
+            ["Summary"] = "summary"
+        }));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var html = await response.Content.ReadAsStringAsync();
+        Assert.Contains("validation-summary-errors", html);
+        Assert.Contains("field-validation-error", html);
+        Assert.Contains("data-valmsg-for=\"Slug\"", html);
+    }
+
+    [Fact]
+    public async Task UserAuthorization_Editor_Shows_FieldLevel_Validation_And_UnsavedChanges_Warning()
+    {
+        using var factory = new CustomWebApplicationFactory();
+        var client = factory.CreateClient(new() { AllowAutoRedirect = false });
+
+        await LoginAsync(client, "admin-token", "/admin/masters/user-authorizations");
+
+        var editorHtml = await (await client.GetAsync("/admin/masters/user-authorizations/new")).Content.ReadAsStringAsync();
+        Assert.Contains("data-unsaved-warning=\"true\"", editorHtml);
+        Assert.Contains("beforeunload", editorHtml);
+        Assert.Contains("data-valmsg-for=\"GoogleUserId\"", editorHtml);
+        Assert.Contains("data-valmsg-for=\"Role\"", editorHtml);
+        Assert.Contains("data-valmsg-for=\"Permissions\"", editorHtml);
+
+        var antiForgeryToken = await GetAntiforgeryTokenAsync(client, "/admin/masters/user-authorizations/new");
+        var response = await client.PostAsync("/admin/masters/user-authorizations/new", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["__RequestVerificationToken"] = antiForgeryToken,
+            ["GoogleUserId"] = "",
+            ["Role"] = "InvalidRole",
+            ["Permissions"] = AppPermissions.ManageRuleSets
+        }));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var html = await response.Content.ReadAsStringAsync();
+        Assert.Contains("validation-summary-errors", html);
+        Assert.Contains("field-validation-error", html);
+        Assert.Contains("data-valmsg-for=\"GoogleUserId\"", html);
+        Assert.Contains("data-valmsg-for=\"Role\"", html);
     }
 
     private static async Task LoginAsync(HttpClient client, string accessToken, string returnUrl = "/admin/masters/rule-sets")

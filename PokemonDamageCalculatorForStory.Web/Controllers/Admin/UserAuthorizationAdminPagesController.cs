@@ -1,3 +1,4 @@
+using FluentValidation;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,7 +14,10 @@ namespace PokemonDamageCalculatorForStory.Controllers.Admin;
 
 [AutoValidateAntiforgeryToken]
 [Authorize(AuthenticationSchemes = AdminCookieAuthenticationDefaults.AuthenticationScheme, Policy = AppPolicies.ManageAuthorizationMasters)]
-public sealed class UserAuthorizationAdminPagesController(IMediator mediator) : Controller
+public sealed class UserAuthorizationAdminPagesController(
+    IMediator mediator,
+    IValidator<CreateAdminUserAuthorizationCommand> createValidator,
+    IValidator<UpdateAdminUserAuthorizationCommand> updateValidator) : Controller
 {
     [HttpGet("admin/masters/user-authorizations")]
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
@@ -27,15 +31,25 @@ public sealed class UserAuthorizationAdminPagesController(IMediator mediator) : 
             false));
 
     [HttpPost("admin/masters/user-authorizations/new")]
-    public async Task<IActionResult> Create([FromForm] string googleUserId, [FromForm] string role, [FromForm] List<string> permissions, CancellationToken cancellationToken)
+    public async Task<IActionResult> Create([FromForm] AdminUserAuthorizationUpsertRequest request, CancellationToken cancellationToken)
     {
-        var request = new AdminUserAuthorizationUpsertRequest(googleUserId, role, permissions);
+        var command = new CreateAdminUserAuthorizationCommand(
+            User.GetRequiredGoogleUserId(),
+            User.GetRoleOrMember(),
+            request.GoogleUserId,
+            request.Role,
+            request.Permissions);
+
+        var validationResult = await createValidator.ValidateAsync(command, cancellationToken);
+        if (!validationResult.IsValid)
+        {
+            ModelState.AddValidationFailures(validationResult.Errors);
+            return View("Editor", CreateViewModel(null, request, false));
+        }
 
         try
         {
-            var created = await mediator.Send(
-                new CreateAdminUserAuthorizationCommand(User.GetRequiredGoogleUserId(), User.GetRoleOrMember(), request.GoogleUserId, request.Role, request.Permissions),
-                cancellationToken);
+            var created = await mediator.Send(command, cancellationToken);
 
             TempData["SuccessMessage"] = $"User Authorization '{created.GoogleUserId}' を作成しました。";
             return RedirectToAction(nameof(Edit), new { googleUserId = created.GoogleUserId });
@@ -63,15 +77,25 @@ public sealed class UserAuthorizationAdminPagesController(IMediator mediator) : 
     }
 
     [HttpPost("admin/masters/user-authorizations/{googleUserId}")]
-    public async Task<IActionResult> Update(string googleUserId, [FromForm] string role, [FromForm] List<string> permissions, CancellationToken cancellationToken)
+    public async Task<IActionResult> Update(string googleUserId, [FromForm] AdminUserAuthorizationUpsertRequest request, CancellationToken cancellationToken)
     {
-        var request = new AdminUserAuthorizationUpsertRequest(googleUserId, role, permissions);
+        var command = new UpdateAdminUserAuthorizationCommand(
+            User.GetRequiredGoogleUserId(),
+            User.GetRoleOrMember(),
+            googleUserId,
+            request.Role,
+            request.Permissions);
+
+        var validationResult = await updateValidator.ValidateAsync(command, cancellationToken);
+        if (!validationResult.IsValid)
+        {
+            ModelState.AddValidationFailures(validationResult.Errors);
+            return View("Editor", CreateViewModel(googleUserId, new AdminUserAuthorizationUpsertRequest(googleUserId, request.Role, request.Permissions), false));
+        }
 
         try
         {
-            var updated = await mediator.Send(
-                new UpdateAdminUserAuthorizationCommand(User.GetRequiredGoogleUserId(), User.GetRoleOrMember(), googleUserId, request.Role, request.Permissions),
-                cancellationToken);
+            var updated = await mediator.Send(command, cancellationToken);
 
             if (updated is null)
             {
