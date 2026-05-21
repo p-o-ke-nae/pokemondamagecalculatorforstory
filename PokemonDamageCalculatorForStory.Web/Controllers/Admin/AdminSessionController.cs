@@ -1,18 +1,14 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using PokemonDamageCalculatorForStory.Application.Authorization;
 using PokemonDamageCalculatorForStory.Authentication;
-using PokemonDamageCalculatorForStory.Domain.Ports;
-using PokemonDamageCalculatorForStory.Extensions;
 
 namespace PokemonDamageCalculatorForStory.Controllers.Admin;
 
+[AutoValidateAntiforgeryToken]
 public sealed class AdminSessionController(
-    IGoogleAccessTokenValidationService tokenValidationService,
-    IUserAuthorizationInfoRepository userAuthorizationRepository) : Controller
+    IGoogleAccessTokenValidationService tokenValidationService) : Controller
 {
     [HttpGet("admin/login")]
     [AllowAnonymous]
@@ -34,20 +30,13 @@ public sealed class AdminSessionController(
             return View();
         }
 
-        var userAuthorization = await userAuthorizationRepository.FindByGoogleUserIdAsync(validation.GoogleUserId!, cancellationToken);
         var claims = new List<Claim>
         {
             new(GoogleClaimTypes.GoogleUserId, validation.GoogleUserId!),
             new(ClaimTypes.NameIdentifier, validation.GoogleUserId!),
             new(ClaimTypes.Email, validation.Email!),
-            new(ClaimTypes.Name, validation.Name!),
-            new(ClaimTypes.Role, userAuthorization?.Role ?? AppRoles.Member)
+            new(ClaimTypes.Name, validation.Name!)
         };
-
-        foreach (var permission in userAuthorization?.Permissions ?? [])
-        {
-            claims.Add(new Claim("permission", permission));
-        }
 
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, AdminCookieAuthenticationDefaults.AuthenticationScheme));
         await HttpContext.SignInAsync(AdminCookieAuthenticationDefaults.AuthenticationScheme, principal);

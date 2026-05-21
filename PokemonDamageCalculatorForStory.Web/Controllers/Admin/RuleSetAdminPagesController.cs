@@ -11,6 +11,7 @@ using PokemonDamageCalculatorForStory.ViewModels.Admin;
 
 namespace PokemonDamageCalculatorForStory.Controllers.Admin;
 
+[AutoValidateAntiforgeryToken]
 [Authorize(AuthenticationSchemes = AdminCookieAuthenticationDefaults.AuthenticationScheme, Policy = AppPolicies.ManageBusinessMasters)]
 public sealed class RuleSetAdminPagesController(IMediator mediator) : Controller
 {
