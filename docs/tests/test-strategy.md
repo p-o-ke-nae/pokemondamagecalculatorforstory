@@ -1,142 +1,111 @@
 # テスト戦略
 
-> 対象システム: ストーリー攻略用ポケモンダメージ計算 Web API
+> 対象システム: ストーリー攻略用ポケモンダメージ計算 Web / 管理 UI / 管理 API
 > 関連ドキュメント: [architecture-overview.md](../design/architecture-overview.md) | [domain-model.md](../design/domain-model.md)
 
 ---
 
 ## 概要
 
-本ドキュメントはテスト戦略とテスト対象の一覧を定義する。
+本ドキュメントは、Phase 2 で追加予定の管理機能に対するテスト観点を整理する。
 
-### テスト構成サマリ
+### 重点観点
 
-| 種別 | クラス | DB 接続 |
-|------|-----|---------|
-| ユニットテスト（Infrastructure） | 1 クラス | 不要 |
-| 統合テスト（Repository / Infrastructure） | 1 クラス | SQL Server 必要 |
-| 統合テスト（Controller / E2E） | 2 クラス | インメモリ DB（WebApplicationFactory） |
-
----
-
-## 1. ユニットテスト
-
-DB 接続不要。高速に実行できる。
-
-### 対象クラスと検証内容
-
-| テストクラス | 配置パス | テスト対象 | 検証内容 |
-|------------|---------|-----------|---------|
-| `DesignTimeConnectionStringResolverTests` | `Tests/Infrastructure/Data/DesignTimeConnectionStringResolverTests.cs` | `Infrastructure/Data/DesignTimeConnectionStringResolver.cs` | 環境変数・appsettings による接続文字列解決ロジック（優先度・正規化） |
+| 観点 | 内容 |
+|------|------|
+| 認可 | `Administrator` / `MasterEditor` / `Member` の許可差分 |
+| Permission Catalog | catalog 値制約と role 整合性 |
+| 公開非退行 | 公開 RuleSet API が `Active` のみ返すこと |
+| 管理整合性 | slug 重複、参照中削除、最後の Administrator 保護 |
+| 監査ログ | admin mutation の成功/拒否時に構造化アプリケーションログが残ること |
+| UI 導線 | 同一 Web ホスト上の管理画面遷移とエラー表示 |
 
 ---
 
-## 2. 統合テスト（Repository）
+## 1. Domain / Application テスト
 
-SQL Server への接続が必要。`InfrastructureSqlServerTestDatabase` パターンを継承して実装する。
-
-### 対象クラスと検証内容
-
-| テストクラス | 配置パス | テスト対象 | 検証内容 |
-|------------|---------|-----------|---------|
-| `UserAuthorizationInfoRepositoryTests` | `Tests/Infrastructure/Repositories/UserAuthorizationInfoRepositoryTests.cs` | `Infrastructure/Repositories/UserAuthorizationInfoRepository.cs` | `FindByGoogleUserIdAsync`・Role / Permission の正確な復元 |
-
-### 統合テスト基盤
-
-```csharp
-// 既存パターンを継承
-// Tests/Infrastructure/TestSupport/InfrastructureSqlServerTestDatabase.cs
-```
-
-Docker Compose を使用してテスト用 SQL Server を起動する。
-
-```bash
-docker compose -f docker-compose.dotnet.test-db.yml up -d
-```
+| 対象 | 主な確認内容 |
+|------|--------------|
+| `RuleSet` | status 値、必須項目、不変条件 |
+| `UserAuthorizationInfo` | role 値、permissions 重複拒否、catalog 値、role 整合性 |
+| Admin Validators | request 形式、必須項目、列挙値、catalog 外 permission 拒否 |
+| Public RuleSet Query | `Active` フィルタ、不可視 RuleSet の 404 化 |
+| Admin audit logging service | mutation 種別ごとの payload 生成、成功/拒否結果の記録 |
 
 ---
 
-## 3. 統合テスト（Controller / E2E）
+## 2. Infrastructure 統合テスト
 
-`CustomWebApplicationFactory` を使用してインメモリ DB でアプリ全体を起動し、HTTP レベルでエンドポイントを検証する。SQL Server は不要。
+| 対象 | 主な確認内容 |
+|------|--------------|
+| RuleSet repository | CRUD、slug 重複、参照中 RuleSet 判定 |
+| UserAuthorizationInfo repository | CRUD、最後の Administrator 判定 |
+| Audit log logger | admin mutation 記録の出力、target/actor/result の保持 |
+| 一覧取得 | `isReferencedByRuns` / `isLastAdministrator` 相当の集計が N+1 にならない前提の結果確認 |
 
-### 対象クラスと検証内容
-
-| テストクラス | 配置パス | テスト対象 | 検証内容 |
-|------------|---------|-----------|---------|
-| `RuleSetsControllerTests` | `Tests/Web/Controllers/RuleSetsControllerTests.cs` | `RuleSetsController` | `GET /api/rule-sets`（シードデータ存在確認）、`GET ./{id}`（200/404）、Swagger JSON |
-| `RunsControllerTests` | `Tests/Web/Controllers/RunsControllerTests.cs` | `RunsController` | `GET /api/runs`（200）、`POST /api/runs` 認証なし（401）、`POST /api/runs` トークンあり（201） |
-
-### CustomWebApplicationFactory
-
-```csharp
-// Tests/Web/TestSupport/CustomWebApplicationFactory.cs
-// WebApplicationFactory<Program> を継承
-// インメモリ DB + シードデータ（Gen6 RuleSet、テストユーザー認証）を設定
-public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
-{
-    public static readonly Guid Gen6RuleSetId = /* 固定 Guid */;
-}
-```
+> 一意制約や競合系の確認は InMemory DB だけで代替しない。
 
 ---
 
-## 4. テスト配置規則
+## 3. Web 統合テスト
 
-テストファイルは以下の規則に従って配置する。
+### 3-1. 管理 API
 
-```
-PokemonDamageCalculatorForStory.Tests/
-├── Infrastructure/
-│   ├── Data/
-│   │   └── DesignTimeConnectionStringResolverTests.cs   ← ユニットテスト
-│   ├── Repositories/
-│   │   └── UserAuthorizationInfoRepositoryTests.cs      ← 統合テスト（SQL Server）
-│   └── TestSupport/
-│       └── InfrastructureSqlServerTestDatabase.cs       ← 統合テスト基盤
-└── Web/
-    ├── Controllers/
-    │   ├── RuleSetsControllerTests.cs                   ← 統合テスト（E2E）
-    │   └── RunsControllerTests.cs                       ← 統合テスト（E2E）
-    └── TestSupport/
-        └── CustomWebApplicationFactory.cs               ← E2E テスト基盤
-```
+| シナリオ | 期待結果 |
+|---------|----------|
+| 匿名で `/api/admin/rule-sets` | `401` |
+| `Member` で `/api/admin/rule-sets` | `403` |
+| `MasterEditor` で RuleSet 管理 API | 許可 |
+| `MasterEditor` で UserAuthorizationInfo 管理 API | `403` |
+| `Administrator` で UserAuthorizationInfo 管理 API | 許可 |
+| `Member` に `masters.rulesets.manage` を保存しようとする更新 | `400` |
+| catalog 外 permission を指定 | `400` |
+| slug 重複作成/更新 | `409` |
+| 参照中 RuleSet 削除 | `409` |
+| 最後の Administrator 変更/削除 | `409` |
+| RuleSet 作成成功 | 監査ログに `RuleSetCreated` が出力される |
+| RuleSet 削除が参照中で失敗 | 監査ログに `Rejected` が出力される |
+| UserAuthorization 更新成功 | 監査ログに `UserAuthorizationUpdated` が出力される |
 
-> 配置規則: `Tests/<TargetProject>/<相対パス>/<TargetClass>Tests.cs`
+### 3-2. 公開 API 非退行
 
----
-
-## 5. テスト実行コマンド
-
-### 全テスト実行
-
-```bash
-# テスト用 DB を起動してから実行（Repository 統合テストが SQL Server を必要とする）
-docker compose -f docker-compose.dotnet.test-db.yml up -d
-dotnet test PokemonDamageCalculatorForStory.sln
-```
-
-### DB 不要のテストのみ実行
-
-```bash
-dotnet test PokemonDamageCalculatorForStory.sln --filter "Category!=Integration"
-```
-
-### ビルド確認後にテスト実行
-
-```bash
-dotnet build PokemonDamageCalculatorForStory.sln
-dotnet test PokemonDamageCalculatorForStory.sln --no-build
-```
+| シナリオ | 期待結果 |
+|---------|----------|
+| `GET /api/rule-sets` | `Active` のみ返却 |
+| `GET /api/rule-sets/{id}` で `Draft` | `404` |
+| `GET /api/rule-sets/{id}` で `Archived` | `404` |
 
 ---
 
-## 6. 受け入れ基準との対応
+## 4. UI / E2E 観点
 
-| 受け入れ基準 | 対応するテスト |
-|------------|-------------|
-| AC-1: `dotnet build` 成功 | CI パイプライン / ローカルビルド確認 |
-| AC-2: `dotnet test` 成功 | 全テスト実行 |
-| AC-3: アーキテクチャ準拠（CQRS・Create/Restore） | `RuleSetsControllerTests`, `RunsControllerTests`（E2E でエンドポイント動作を確認） |
-| AC-4: 認証フロー（401 / 認証あり 201） | `RunsControllerTests`（Create_Without_Token_Returns_401, Create_With_Token_Returns_201） |
-| AC-5: UserAuthorizationInfo の Role/Permission 復元 | `UserAuthorizationInfoRepositoryTests` |
+| 画面 | 主な確認内容 |
+|------|--------------|
+| RuleSet 一覧 | 表示、クライアント側検索、編集導線 |
+| RuleSet 新規/編集 | 保存成功、重複/参照中エラー表示 |
+| UserAuthorization 一覧 | 表示、編集導線 |
+| UserAuthorization 新規/編集 | role 更新、permissions 表示、last-admin エラー表示 |
+| 画面導線 | role ごとの表示可否 |
+
+---
+
+## 5. テストデータ方針
+
+- `Administrator` / `MasterEditor` / `Member` の 3 種類を固定データで用意する
+- `RuleSet` は `Active` / `Draft` / `Archived` を最低 1 件ずつ用意する
+- 参照中 RuleSet と未参照 RuleSet を分けて用意する
+- 最後の Administrator ケースを再現できるデータを用意する
+
+---
+
+## 6. 受け入れ基準への対応
+
+| 受け入れ観点 | テスト種別 |
+|-------------|-----------|
+| 管理 UI が同一 Web に載ること | UI / E2E |
+| RuleSet 管理 CRUD | Web 統合 + Infrastructure |
+| UserAuthorizationInfo 管理 CRUD | Web 統合 + Infrastructure |
+| role 階層の反映 | Domain / Web 統合 |
+| permission catalog の明示値制約 | Domain / Application / Web 統合 |
+| admin mutation の監査証跡 | Application / Infrastructure / Web 統合 |
+| 公開 RuleSet API の `Active` 制限 | Application / Web 統合 |

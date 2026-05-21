@@ -1,0 +1,33 @@
+@{
+    Layout = null;
+    var returnUrl = (string?)ViewData["ReturnUrl"] ?? "/admin/masters/rule-sets";
+}
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8" />
+    <title>Admin Login</title>
+    <style>
+        body { font-family: sans-serif; background: #f5f7fb; }
+        .card { max-width: 480px; margin: 48px auto; background: white; padding: 24px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+        textarea { width: 100%; min-height: 120px; }
+        .validation-summary-errors { background: #fef2f2; color: #991b1b; padding: 12px; border-radius: 6px; margin-bottom: 16px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>管理画面ログイン</h1>
+        <p>Google Access Token を貼り付けて、同一 Web ホストの Cookie セッションを作成します。</p>
+        @Html.ValidationSummary()
+        <form method="post">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="returnUrl" value="@returnUrl" />
+            <label for="accessToken">Access Token</label>
+            <textarea id="accessToken" name="accessToken"></textarea>
+            <div style="margin-top:16px;">
+                <button type="submit">ログイン</button>
+            </div>
+        </form>
+    </div>
+</body>
+</html>

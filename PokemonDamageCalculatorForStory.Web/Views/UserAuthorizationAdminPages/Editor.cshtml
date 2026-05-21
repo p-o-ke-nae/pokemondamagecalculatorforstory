@@ -1,0 +1,53 @@
+@model PokemonDamageCalculatorForStory.ViewModels.Admin.AdminUserAuthorizationEditorViewModel
+@{
+    ViewData["Title"] = Model.Heading;
+}
+<div class="card">
+    <h1>@Model.Heading</h1>
+    @Html.ValidationSummary()
+    @if (Model.IsLastAdministrator)
+    {
+        <p class="warning">このレコードは最後の Administrator です。Role 変更や削除はできません。</p>
+    }
+    <form method="post" action="@(string.IsNullOrWhiteSpace(Model.GoogleUserId) ? "/admin/masters/user-authorizations/new" : $"/admin/masters/user-authorizations/{Model.GoogleUserId}")">
+        @Html.AntiForgeryToken()
+        @if (string.IsNullOrWhiteSpace(Model.GoogleUserId))
+        {
+            <label>Google User ID</label>
+            <input type="text" name="googleUserId" value="@Model.Form.GoogleUserId" />
+        }
+        else
+        {
+            <label>Google User ID</label>
+            <input type="text" value="@Model.GoogleUserId" disabled />
+        }
+        <label>Role</label>
+        <select name="role">
+            @foreach (var role in Model.RoleOptions)
+            {
+                <option value="@role" selected="@(role == Model.Form.Role ? "selected" : null)">@role</option>
+            }
+        </select>
+        <label>Permissions</label>
+        <div class="checkbox-list">
+            @foreach (var permission in Model.PermissionOptions)
+            {
+                <label>
+                    <input type="checkbox" name="permissions" value="@permission" checked="@(Model.Form.Permissions.Contains(permission) ? "checked" : null)" />
+                    @permission
+                </label>
+            }
+        </div>
+        <div class="actions">
+            <button type="submit">保存</button>
+            <a href="/admin/masters/user-authorizations">一覧へ戻る</a>
+        </div>
+    </form>
+    @if (!string.IsNullOrWhiteSpace(Model.GoogleUserId))
+    {
+        <form method="post" action="/admin/masters/user-authorizations/@Model.GoogleUserId/delete" onsubmit="return confirm('削除しますか？');">
+            @Html.AntiForgeryToken()
+            <button type="submit" disabled="@(Model.IsLastAdministrator ? "disabled" : null)">削除</button>
+        </form>
+    }
+</div>

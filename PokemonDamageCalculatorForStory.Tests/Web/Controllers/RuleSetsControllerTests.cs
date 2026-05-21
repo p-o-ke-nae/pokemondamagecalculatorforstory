@@ -23,7 +23,8 @@ public sealed class RuleSetsControllerTests : IClassFixture<CustomWebApplication
 
         var body = await response.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(body);
-        Assert.True(doc.RootElement.GetArrayLength() >= 1);
+        Assert.Equal(1, doc.RootElement.GetArrayLength());
+        Assert.Equal("gen6-standard", doc.RootElement[0].GetProperty("slug").GetString());
     }
 
     [Fact]
@@ -42,6 +43,16 @@ public sealed class RuleSetsControllerTests : IClassFixture<CustomWebApplication
     public async Task GetById_Returns_404_For_Unknown_RuleSet()
     {
         var response = await _client.GetAsync($"/api/rule-sets/{Guid.NewGuid()}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("00000000-0000-0000-0000-000000000002")]
+    [InlineData("00000000-0000-0000-0000-000000000003")]
+    public async Task GetById_Returns_404_For_NonActive_RuleSet(string id)
+    {
+        var response = await _client.GetAsync($"/api/rule-sets/{id}");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }

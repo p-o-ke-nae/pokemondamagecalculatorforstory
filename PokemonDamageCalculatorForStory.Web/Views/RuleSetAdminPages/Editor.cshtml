@@ -1,0 +1,43 @@
+@model PokemonDamageCalculatorForStory.ViewModels.Admin.AdminRuleSetEditorViewModel
+@{
+    ViewData["Title"] = Model.Heading;
+}
+<div class="card">
+    <h1>@Model.Heading</h1>
+    @Html.ValidationSummary()
+    @if (Model.IsReferencedByRuns)
+    {
+        <p class="warning">この RuleSet は Run から参照されているため削除できません。</p>
+    }
+    <form method="post" action="@(Model.Id.HasValue ? $"/admin/masters/rule-sets/{Model.Id}" : "/admin/masters/rule-sets/new")">
+        @Html.AntiForgeryToken()
+        <label>Slug</label>
+        <input type="text" name="Slug" value="@Model.Form.Slug" />
+        <label>Generation</label>
+        <input type="number" name="Generation" value="@Model.Form.Generation" min="1" />
+        <label>Title</label>
+        <input type="text" name="Title" value="@Model.Form.Title" />
+        <label>Version</label>
+        <input type="text" name="Version" value="@Model.Form.Version" />
+        <label>Status</label>
+        <select name="Status">
+            @foreach (var status in Model.StatusOptions)
+            {
+                <option value="@status" selected="@(status == Model.Form.Status ? "selected" : null)">@status</option>
+            }
+        </select>
+        <label>Summary</label>
+        <textarea name="Summary">@Model.Form.Summary</textarea>
+        <div class="actions">
+            <button type="submit">保存</button>
+            <a href="/admin/masters/rule-sets">一覧へ戻る</a>
+        </div>
+    </form>
+    @if (Model.Id.HasValue)
+    {
+        <form method="post" action="/admin/masters/rule-sets/@Model.Id/delete" onsubmit="return confirm('削除しますか？');">
+            @Html.AntiForgeryToken()
+            <button type="submit" disabled="@(Model.IsReferencedByRuns ? "disabled" : null)">削除</button>
+        </form>
+    }
+</div>
