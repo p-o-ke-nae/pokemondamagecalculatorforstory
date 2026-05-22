@@ -88,7 +88,7 @@ internal sealed class InfrastructureSqlServerTestDatabase : IAsyncDisposable
 
         public string DatabasePrefix => Get("MSSQL_DB") ?? "PokemonDamageCalculatorForStory";
 
-        public string HostPort => Get("TEST_DB_HOST_PORT") ?? "18034";
+        public string HostPort => Get("TEST_DB_HOST_PORT") ?? "20034";
 
         public string Password => Get("MSSQL_SA_PASSWORD") ?? "Sql1Password";
 

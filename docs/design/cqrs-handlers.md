@@ -1,226 +1,170 @@
 # CQRS ハンドラー設計
 
-> 対象システム: ストーリー攻略用ポケモンダメージ計算 Web API
+> 対象システム: ストーリー攻略用ポケモンダメージ計算 Application 層
 > 関連ドキュメント: [architecture-overview.md](./architecture-overview.md) | [api-reference.md](./api-reference.md)
 
 ---
 
 ## 概要
 
-本ドキュメントは Application 層の CQRS 設計を定義する。
-すべてのユースケースは **Command / Query + Handler** パターンで実装し、Service クラスは作らない。
+本ドキュメントは、実装済みの公開系と管理系の CQRS 構成を整理する。
 
-### Handler 数の内訳
+### 設計ポイント
 
-| 種別 | 数 |
-|------|-----|
-| Command Handler | 8 |
-| Query Handler | 6 |
-| FluentValidation Validator | 6 |
+| 項目 | 方針 |
+|------|------|
+| ハンドラー構成 | 公開ユースケースと管理ユースケースを分離 |
+| 管理機能 | `Admin/RuleSets` と `Admin/UserAuthorizations` 単位で整理 |
+| Web 層 | API Controller が MediatR に委譲 |
+| Validator | 入力形式・catalog 値・重複を検証し、業務不変条件は Domain / Repository へ委譲 |
+| 監査ログ | admin mutation handler から `IAdminAuditLogger` を呼び出す |
 
 ---
 
-## 1. MediatR パイプライン
+## 1. パイプライン
 
 ```mermaid
 flowchart LR
-    Controller -->|IMediator.Send| ValidationBehavior
-    ValidationBehavior -->|バリデーション通過| Handler
-    ValidationBehavior -->|バリデーション失敗| ValidationError["ValidationException"]
-    Handler --> Domain["Domain Entity / DamageCalculator"]
-    Handler --> Repository["Repository（Port 経由）"]
-    Handler -->|Response DTO| Controller
+    Web["API Controller"] -->|Send| ValidationBehavior
+    ValidationBehavior --> Handler
+    Handler --> Domain
+    Handler --> Repository
+    Handler --> DTO
+    Handler --> Audit["IAdminAuditLogger"]
 ```
 
-### パイプラインの構成要素
+### 適用方針
 
-| 要素 | 役割 |
-|------|------|
-| Controller | `IMediator.Send()` への委譲のみ。ビジネスロジックを持たない |
-| ValidationBehavior | FluentValidation によるリクエスト検証（パイプラインとして自動適用） |
-| Handler | リポジトリと Domain Entity のオーケストレーション |
-| Domain Entity / DamageCalculator | ビジネスルール実装 |
-| Repository | Port インターフェース経由でデータアクセス |
-
-### Controller 実装例
-
-```csharp
-[ApiController]
-[Route("api/runs")]
-public class RunsController(IMediator mediator) : ControllerBase
-{
-    [HttpPost]
-    [Authorize]
-    public async Task<IActionResult> Create(CreateRunRequest request, CancellationToken ct)
-    {
-        var ownerUserId = User.GetRequiredGoogleUserId();
-        var result = await mediator.Send(new CreateRunCommand(ownerUserId, request.Name, request.RuleSetId), ct);
-        return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
-    }
-
-    [HttpGet("{id:guid}")]
-    [AllowAnonymous]
-    public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
-    {
-        var result = await mediator.Send(new GetRunByIdQuery(id), ct);
-        return result is null ? NotFound() : Ok(result);
-    }
-
-    [HttpDelete("{id:guid}")]
-    [Authorize]
-    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
-    {
-        var deleted = await mediator.Send(new DeleteRunCommand(id), ct);
-        return deleted ? NoContent() : NotFound();
-    }
-}
-```
+- 公開 API と管理 API の双方で同じ MediatR パイプラインを利用する
+- 認可は Web 層 policy で先に判定する
+- Handler 内では role 分岐を行わず、actor 情報は監査ログ用に受け取る
+- permission catalog 検証は Validator で行うが、最終的な allow/deny は role-based policy を維持する
 
 ---
 
-## 2. Command Handler 一覧
+## 2. 公開系 Query
 
-Command はデータ変更操作（Create / Update / Delete）を担う。
+| Query | 役割 | 対応 API |
+|-------|------|----------|
+| `GetAllRuleSetsQuery` | `Active` な RuleSet 一覧取得 | `GET /api/rule-sets` |
+| `GetRuleSetByIdQuery` | 匿名公開可能な RuleSet 詳細取得 | `GET /api/rule-sets/{id}` |
 
-| Command | Handler | 対応エンドポイント | DB 書き込み |
-|---------|---------|-----------------|------------|
-| `CreateRunCommand` | `CreateRunCommandHandler` | `POST /api/runs` | あり |
-| `UpdateRunCommand` | `UpdateRunCommandHandler` | `PUT /api/runs/{id}` | あり |
-| `DeleteRunCommand` | `DeleteRunCommandHandler` | `DELETE /api/runs/{id}` | あり |
-| `CreateBattleCommand` | `CreateBattleCommandHandler` | `POST /api/runs/{runId}/battles` | あり |
-| `UpdateBattleCommand` | `UpdateBattleCommandHandler` | `PUT /api/runs/{runId}/battles/{id}` | あり |
-| `DeleteBattleCommand` | `DeleteBattleCommandHandler` | `DELETE /api/runs/{runId}/battles/{id}` | あり |
-| `CalculateDamageCommand` | `CalculateDamageCommandHandler` | `POST /api/runs/{runId}/battles/{id}/calculate` | **あり**（`CalculationResult` を永続化） |
-| `AddProgressionEventCommand` | `AddProgressionEventCommandHandler` | `POST /api/runs/{runId}/party-state` | あり |
+### 公開系の注意点
 
-### CalculateDamageCommandHandler の特記事項
-
-`CalculateDamageCommandHandler` はダメージ計算ロジックを Handler 内に実装し、計算結果を `IBattleRepository.SaveCalculationResultAsync()` で DB に保存する。
-
-```csharp
-public class CalculateDamageCommandHandler(IBattleRepository repository)
-    : IRequestHandler<CalculateDamageCommand, CalculationResultDto>
-{
-    public async Task<CalculationResultDto> Handle(CalculateDamageCommand request, CancellationToken ct)
-    {
-        var levelFactor = (2 * request.AttackerLevel / 5) + 2;
-        var baseDamage = (int)Math.Floor((double)(levelFactor * request.MovePower * request.AttackStat)
-            / request.DefenseStat / 50) + 2;
-
-        var rolls = Enumerable.Range(85, 16)
-            .Select(roll =>
-            {
-                var rolledDamage = (int)Math.Floor(baseDamage * roll / 100.0);
-                var stabbedDamage = (int)Math.Floor(rolledDamage * (request.HasStab ? 1.5 : 1.0));
-                return (int)Math.Floor(stabbedDamage * request.TypeEffectiveness);
-            })
-            .ToArray();
-
-        var attackerParamsJson = JsonSerializer.Serialize(new { ... });
-        var defenderParamsJson = JsonSerializer.Serialize(new { ... });
-
-        var result = CalculationResult.Create(request.RunId, request.BattleId, attackerParamsJson, defenderParamsJson, rolls);
-        var saved = await repository.SaveCalculationResultAsync(result, ct);
-        return new CalculationResultDto(saved.Id, saved.RunId, saved.BattleId, saved.AttackerParams, saved.DefenderParams, saved.DamageRolls);
-    }
-}
-```
+- 公開系 Query は repository の `FindAllActiveAsync` / `FindActiveByIdAsync` を使う
+- `Draft` / `Archived` は匿名向けには `404` 扱いとする
+- 管理系 Query と共有せず、可視性条件を明示的に分離する
 
 ---
 
-## 3. Query Handler 一覧
+## 3. 管理 RuleSet ユースケース
 
-Query は読み取り操作を担う。副作用なし（idempotent）。
+### Query
 
-| Query | Handler | 対応エンドポイント |
-|-------|---------|-----------------|
-| `GetAllRuleSetsQuery` | `GetAllRuleSetsQueryHandler` | `GET /api/rule-sets` |
-| `GetRuleSetByIdQuery` | `GetRuleSetByIdQueryHandler` | `GET /api/rule-sets/{id}` |
-| `GetAllRunsQuery` | `GetAllRunsQueryHandler` | `GET /api/runs` |
-| `GetRunByIdQuery` | `GetRunByIdQueryHandler` | `GET /api/runs/{id}` |
-| `GetBattlesByRunQuery` | `GetBattlesByRunQueryHandler` | `GET /api/runs/{runId}/battles` |
-| `ProjectPartyStateQuery` | `ProjectPartyStateQueryHandler` | `GET /api/runs/{runId}/party-state` |
+| Query | 役割 | 対応 API |
+|-------|------|----------|
+| `GetAdminRuleSetsQuery` | 全状態の一覧取得 | `GET /api/admin/rule-sets` |
+| `GetAdminRuleSetByIdQuery` | 詳細取得 | `GET /api/admin/rule-sets/{id}` |
 
----
+### Command
 
-## 4. FluentValidation
+| Command | 役割 | 対応 API |
+|---------|------|----------|
+| `CreateAdminRuleSetCommand` | 新規作成 | `POST /api/admin/rule-sets` |
+| `UpdateAdminRuleSetCommand` | 更新 | `PUT /api/admin/rule-sets/{id}` |
+| `DeleteAdminRuleSetCommand` | 削除 | `DELETE /api/admin/rule-sets/{id}` |
 
-### 適用 Validator 一覧
+### Handler の責務
 
-形式的な入力検証（null/空白・範囲チェック）を担当する。ビジネスルール検証は Domain Entity に委譲する。
-
-| Validator | 検証対象 Command | 主な検証項目 |
-|-----------|----------------|------------|
-| `CreateRunCommandValidator` | `CreateRunCommand` | Name 必須・256 文字以内、RuleSetId 非空 Guid |
-| `UpdateRunCommandValidator` | `UpdateRunCommand` | Name 必須、Status 有効値（Active / Completed / Archived） |
-| `CreateBattleCommandValidator` | `CreateBattleCommand` | Sequence ≥ 1、EnemyPokemon 各値必須・範囲チェック |
-| `UpdateBattleCommandValidator` | `UpdateBattleCommand` | Sequence ≥ 1、EnemyPokemon 各値必須・範囲チェック |
-| `CalculateDamageCommandValidator` | `CalculateDamageCommand` | Level 1-100、Attack/Defense ≥ 1、MovePower ≥ 1、MoveCategory 有効値、TypeEffectiveness 有効倍率 |
-| `AddProgressionEventCommandValidator` | `AddProgressionEventCommand` | RunId / BattleId 必須（BaseStats / IVs / Stats / EVs / Level / Species の整合性は Domain で検証） |
-
-### ValidationBehavior の適用方針
-
-MediatR の `IPipelineBehavior<TRequest, TResponse>` として `ValidationBehavior` を実装し、すべての Command に対して自動適用する。バリデーション失敗時は `ValidationException` を throw する（Controller は `ProblemDetails` 形式で返却）。
+- DTO から Domain の `RuleSet` 生成/更新へ橋渡しする
+- `Slug` 重複と参照中 Run の有無を repository 経由で確認する
+- 一覧 DTO の `isReferencedByRuns` は `FindReferencedRuleSetIdsAsync()` でまとめて計算する
+- mutation handler は `Create` / `Update` / `Delete` の監査ログを記録する
 
 ---
 
-## 5. Application 層ファイル構成
+## 4. 管理 UserAuthorizationInfo ユースケース
 
-```
+### Query
+
+| Query | 役割 | 対応 API |
+|-------|------|----------|
+| `GetAdminUserAuthorizationsQuery` | 一覧取得 | `GET /api/admin/user-authorizations` |
+| `GetAdminUserAuthorizationByIdQuery` | 詳細取得 | `GET /api/admin/user-authorizations/{googleUserId}` |
+
+### Command
+
+| Command | 役割 | 対応 API |
+|---------|------|----------|
+| `CreateAdminUserAuthorizationCommand` | 新規作成 | `POST /api/admin/user-authorizations` |
+| `UpdateAdminUserAuthorizationCommand` | 更新 | `PUT /api/admin/user-authorizations/{googleUserId}` |
+| `DeleteAdminUserAuthorizationCommand` | 削除 | `DELETE /api/admin/user-authorizations/{googleUserId}` |
+
+### Handler の責務
+
+- role と permissions を Domain へ渡す
+- `isLastAdministrator` は `CountByRoleAsync(AppRoles.Administrator)` の結果から組み立てる
+- 最後の `Administrator` の role 変更/削除を `409` 相当の業務エラーへ正規化する
+- `permissions` は catalog 値として扱うが、role ごとの部分集合制約は handler では持たない
+- mutation handler は `Create` / `Update` / `Delete` の監査ログを記録する
+
+---
+
+## 5. Validator
+
+| Validator | 対象 | 主な検証 |
+|-----------|------|----------|
+| `CreateAdminRuleSetCommandValidator` | RuleSet 作成 | 必須項目、slug 形式、status 値、generation 範囲、長さ制約 |
+| `UpdateAdminRuleSetCommandValidator` | RuleSet 更新 | `Id`、必須項目、slug 形式、status 値、generation 範囲、長さ制約 |
+| `CreateAdminUserAuthorizationCommandValidator` | 権限作成 | GoogleUserId、role 値、permissions null、catalog 値、重複拒否 |
+| `UpdateAdminUserAuthorizationCommandValidator` | 権限更新 | GoogleUserId、role 値、permissions null、catalog 値、重複拒否 |
+
+> 最後の Administrator 保護や slug 重複は handler / repository 側で担保する。
+
+---
+
+## 6. 想定ファイル配置
+
+```text
 Application/
+├── Auditing/
+│   ├── AdminAuditEntry.cs
+│   └── IAdminAuditLogger.cs
 ├── Authorization/
 │   ├── AppPermissions.cs
 │   └── AppRoles.cs
-├── UseCases/
-│   ├── Commands/
-│   │   ├── CreateRunCommand.cs
-│   │   ├── CreateRunCommandHandler.cs
-│   │   ├── UpdateRunCommand.cs
-│   │   ├── UpdateRunCommandHandler.cs
-│   │   ├── DeleteRunCommand.cs
-│   │   ├── DeleteRunCommandHandler.cs
-│   │   ├── CreateBattleCommand.cs
-│   │   ├── CreateBattleCommandHandler.cs
-│   │   ├── UpdateBattleCommand.cs
-│   │   ├── UpdateBattleCommandHandler.cs
-│   │   ├── DeleteBattleCommand.cs
-│   │   ├── DeleteBattleCommandHandler.cs
-│   │   ├── CalculateDamageCommand.cs
-│   │   ├── CalculateDamageCommandHandler.cs   ← 計算ロジック内蔵 + DB 保存
-│   │   ├── AddProgressionEventCommand.cs
-│   │   └── AddProgressionEventCommandHandler.cs
-│   └── Queries/
-│       ├── GetAllRuleSetsQuery.cs
-│       ├── GetAllRuleSetsQueryHandler.cs
-│       ├── GetRuleSetByIdQuery.cs
-│       ├── GetRuleSetByIdQueryHandler.cs
-│       ├── GetAllRunsQuery.cs
-│       ├── GetAllRunsQueryHandler.cs
-│       ├── GetRunByIdQuery.cs
-│       ├── GetRunByIdQueryHandler.cs
-│       ├── GetBattlesByRunQuery.cs
-│       ├── GetBattlesByRunQueryHandler.cs
-│       ├── ProjectPartyStateQuery.cs
-│       └── ProjectPartyStateQueryHandler.cs
 ├── DTOs/
 │   ├── RuleSetDto.cs
-│   ├── CreateRunRequest.cs
-│   ├── UpdateRunRequest.cs
-│   ├── RunDto.cs
-│   ├── CreateBattleRequest.cs
-│   ├── UpdateBattleRequest.cs
-│   ├── BattleDto.cs
-│   ├── CalculateDamageRequest.cs
-│   ├── CalculationResultDto.cs
-│   ├── AddProgressionEventRequest.cs
-│   ├── PartyStateDto.cs
-│   └── OwnPokemonSnapshotDto.cs
-├── Mappers/                              ← 現在は空（Mapper は各 Handler 内でインライン実装）
+│   └── Admin/
+├── UseCases/
+│   ├── Queries/
+│   │   ├── GetAllRuleSetsQuery.cs
+│   │   └── GetRuleSetByIdQuery.cs
+│   └── Admin/
+│       ├── RuleSets/
+│       └── UserAuthorizations/
 └── Validators/
-    ├── CreateRunCommandValidator.cs
-    ├── UpdateRunCommandValidator.cs
-    ├── CreateBattleCommandValidator.cs
-    ├── UpdateBattleCommandValidator.cs
-    ├── CalculateDamageCommandValidator.cs
-    └── AddProgressionEventCommandValidator.cs
 ```
+
+---
+
+## 7. 監査ログ設計メモ
+
+| 項目 | 方針 |
+|------|------|
+| 呼び出し位置 | `Create*` / `Update*` / `Delete*` handler の保存結果確定後 |
+| 入力 | actor 情報、`Operation`、`TargetType`、`TargetId`、変更要求要約、結果 |
+| 失敗時 | 業務拒否 (`409` 等) は `Rejected` として記録、validation/policy で未到達のものは記録対象外 |
+| 実装形態 | handler から `IAdminAuditLogger` を呼び、Infrastructure で構造化ログへ出力 |
+
+### 7-1. 検証メモ
+
+- Web 統合テストで admin mutation 実行後の監査記録有無を確認する
+- 監査ログは管理 API の共通 handler により一元化される
+
+---
+
+## 8. 実装注記
+
+- `Permissions[]` は認可判定に使わない
+- admin mutation に監査ログ横断処理を追加しやすい構成を維持する

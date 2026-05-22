@@ -8,7 +8,7 @@ public sealed class GetRuleSetByIdQueryHandler(IRuleSetRepository repository) : 
 {
     public async Task<RuleSetDto?> Handle(GetRuleSetByIdQuery request, CancellationToken cancellationToken)
     {
-        var ruleSet = await repository.FindByIdAsync(request.Id, cancellationToken);
+        var ruleSet = await repository.FindActiveByIdAsync(request.Id, cancellationToken);
         return ruleSet is null ? null : new RuleSetDto(ruleSet.Id, ruleSet.Slug, ruleSet.Generation, ruleSet.Title, ruleSet.Version, ruleSet.Status, ruleSet.Summary);
     }
 }

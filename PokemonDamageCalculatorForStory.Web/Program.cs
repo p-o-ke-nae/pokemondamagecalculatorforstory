@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
+using PokemonDamageCalculatorForStory.Application.Auditing;
 using PokemonDamageCalculatorForStory.Application.Authorization;
 using PokemonDamageCalculatorForStory.Application.Behaviors;
 using PokemonDamageCalculatorForStory.Application.UseCases.Commands;
@@ -15,6 +16,7 @@ using PokemonDamageCalculatorForStory.Authorization;
 using PokemonDamageCalculatorForStory.Domain.Exceptions;
 using PokemonDamageCalculatorForStory.Domain.Ports;
 using PokemonDamageCalculatorForStory.Infrastructure.Data;
+using PokemonDamageCalculatorForStory.Infrastructure.Logging;
 using PokemonDamageCalculatorForStory.Infrastructure.Repositories;
 using DomainValidationException = PokemonDamageCalculatorForStory.Domain.Exceptions.ValidationException;
 
@@ -61,7 +63,14 @@ builder.Services.AddAuthentication(options =>
 })
 .AddScheme<AuthenticationSchemeOptions, GoogleAccessTokenAuthenticationHandler>(GoogleAuthenticationDefaults.AuthenticationScheme, _ => { });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(AppPolicies.ManageBusinessMasters, policy =>
+        policy.RequireRole(AppRoles.Administrator, AppRoles.MasterEditor));
+
+    options.AddPolicy(AppPolicies.ManageAuthorizationMasters, policy =>
+        policy.RequireRole(AppRoles.Administrator));
+});
 
 builder.Services.AddMediatR(cfg =>
     cfg.RegisterServicesFromAssembly(typeof(CreateRunCommand).Assembly));
@@ -74,6 +83,8 @@ builder.Services.AddScoped<IRuleSetRepository, RuleSetRepository>();
 builder.Services.AddScoped<IRunRepository, RunRepository>();
 builder.Services.AddScoped<IBattleRepository, BattleRepository>();
 builder.Services.AddScoped<IUserAuthorizationInfoRepository, UserAuthorizationInfoRepository>();
+builder.Services.AddScoped<IAdminAuditLogger, AdminAuditLogger>();
+builder.Services.AddTransient<IClaimsTransformation, UserAuthorizationClaimsTransformation>();
 
 var app = builder.Build();
 
@@ -101,6 +112,12 @@ app.UseExceptionHandler(exceptionHandlerApp =>
                 Status = StatusCodes.Status400BadRequest,
                 Title = "Validation failed.",
                 Detail = validationException.Message
+            },
+            ConflictException conflictException => new ProblemDetails
+            {
+                Status = StatusCodes.Status409Conflict,
+                Title = "Conflict detected.",
+                Detail = conflictException.Message
             },
             DomainException domainException => new ProblemDetails
             {

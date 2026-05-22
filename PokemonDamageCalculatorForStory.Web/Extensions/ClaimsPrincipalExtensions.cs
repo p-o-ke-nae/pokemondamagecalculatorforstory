@@ -25,4 +25,9 @@ public static class ClaimsPrincipalExtensions
     {
         return principal.FindFirstValue(ClaimTypes.Name);
     }
+
+    public static string GetRoleOrMember(this ClaimsPrincipal principal)
+    {
+        return principal.FindFirstValue(ClaimTypes.Role) ?? "Member";
+    }
 }
