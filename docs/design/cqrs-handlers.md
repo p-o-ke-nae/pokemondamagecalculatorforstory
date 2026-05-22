@@ -15,7 +15,7 @@
 |------|------|
 | ハンドラー構成 | 公開ユースケースと管理ユースケースを分離 |
 | 管理機能 | `Admin/RuleSets` と `Admin/UserAuthorizations` 単位で整理 |
-| Web 層 | API Controller と MVC Controller の両方が MediatR に委譲 |
+| Web 層 | API Controller が MediatR に委譲 |
 | Validator | 入力形式・catalog 値・重複を検証し、業務不変条件は Domain / Repository へ委譲 |
 | 監査ログ | admin mutation handler から `IAdminAuditLogger` を呼び出す |
 
@@ -25,7 +25,7 @@
 
 ```mermaid
 flowchart LR
-    Web["API Controller / MVC Controller"] -->|Send| ValidationBehavior
+    Web["API Controller"] -->|Send| ValidationBehavior
     ValidationBehavior --> Handler
     Handler --> Domain
     Handler --> Repository
@@ -35,7 +35,7 @@ flowchart LR
 
 ### 適用方針
 
-- 公開 API、管理 API、管理 UI の双方で同じ MediatR パイプラインを利用する
+- 公開 API と管理 API の双方で同じ MediatR パイプラインを利用する
 - 認可は Web 層 policy で先に判定する
 - Handler 内では role 分岐を行わず、actor 情報は監査ログ用に受け取る
 - permission catalog 検証は Validator で行うが、最終的な allow/deny は role-based policy を維持する
@@ -61,18 +61,18 @@ flowchart LR
 
 ### Query
 
-| Query | 役割 | 対応 API / UI |
-|-------|------|---------------|
-| `GetAdminRuleSetsQuery` | 全状態の一覧取得 | `GET /api/admin/rule-sets` / `/admin/masters/rule-sets` |
-| `GetAdminRuleSetByIdQuery` | 詳細取得 | `GET /api/admin/rule-sets/{id}` / `/admin/masters/rule-sets/{id}` |
+| Query | 役割 | 対応 API |
+|-------|------|----------|
+| `GetAdminRuleSetsQuery` | 全状態の一覧取得 | `GET /api/admin/rule-sets` |
+| `GetAdminRuleSetByIdQuery` | 詳細取得 | `GET /api/admin/rule-sets/{id}` |
 
 ### Command
 
-| Command | 役割 | 対応 API / UI |
-|---------|------|---------------|
-| `CreateAdminRuleSetCommand` | 新規作成 | `POST /api/admin/rule-sets` / `POST /admin/masters/rule-sets/new` |
-| `UpdateAdminRuleSetCommand` | 更新 | `PUT /api/admin/rule-sets/{id}` / `POST /admin/masters/rule-sets/{id}` |
-| `DeleteAdminRuleSetCommand` | 削除 | `DELETE /api/admin/rule-sets/{id}` / `POST /admin/masters/rule-sets/{id}/delete` |
+| Command | 役割 | 対応 API |
+|---------|------|----------|
+| `CreateAdminRuleSetCommand` | 新規作成 | `POST /api/admin/rule-sets` |
+| `UpdateAdminRuleSetCommand` | 更新 | `PUT /api/admin/rule-sets/{id}` |
+| `DeleteAdminRuleSetCommand` | 削除 | `DELETE /api/admin/rule-sets/{id}` |
 
 ### Handler の責務
 
@@ -87,18 +87,18 @@ flowchart LR
 
 ### Query
 
-| Query | 役割 | 対応 API / UI |
-|-------|------|---------------|
-| `GetAdminUserAuthorizationsQuery` | 一覧取得 | `GET /api/admin/user-authorizations` / `/admin/masters/user-authorizations` |
-| `GetAdminUserAuthorizationByIdQuery` | 詳細取得 | `GET /api/admin/user-authorizations/{googleUserId}` / `/admin/masters/user-authorizations/{googleUserId}` |
+| Query | 役割 | 対応 API |
+|-------|------|----------|
+| `GetAdminUserAuthorizationsQuery` | 一覧取得 | `GET /api/admin/user-authorizations` |
+| `GetAdminUserAuthorizationByIdQuery` | 詳細取得 | `GET /api/admin/user-authorizations/{googleUserId}` |
 
 ### Command
 
-| Command | 役割 | 対応 API / UI |
-|---------|------|---------------|
-| `CreateAdminUserAuthorizationCommand` | 新規作成 | `POST /api/admin/user-authorizations` / `POST /admin/masters/user-authorizations/new` |
-| `UpdateAdminUserAuthorizationCommand` | 更新 | `PUT /api/admin/user-authorizations/{googleUserId}` / `POST /admin/masters/user-authorizations/{googleUserId}` |
-| `DeleteAdminUserAuthorizationCommand` | 削除 | `DELETE /api/admin/user-authorizations/{googleUserId}` / `POST /admin/masters/user-authorizations/{googleUserId}/delete` |
+| Command | 役割 | 対応 API |
+|---------|------|----------|
+| `CreateAdminUserAuthorizationCommand` | 新規作成 | `POST /api/admin/user-authorizations` |
+| `UpdateAdminUserAuthorizationCommand` | 更新 | `PUT /api/admin/user-authorizations/{googleUserId}` |
+| `DeleteAdminUserAuthorizationCommand` | 削除 | `DELETE /api/admin/user-authorizations/{googleUserId}` |
 
 ### Handler の責務
 
@@ -160,12 +160,11 @@ Application/
 ### 7-1. 検証メモ
 
 - Web 統合テストで admin mutation 実行後の監査記録有無を確認する
-- 監査ログは API と MVC の共通 handler により一元化される
+- 監査ログは管理 API の共通 handler により一元化される
 
 ---
 
 ## 8. 実装注記
 
-- 管理 UI から利用するデータも必ず Application 層の Query/Command を経由する
 - `Permissions[]` は認可判定に使わない
 - admin mutation に監査ログ横断処理を追加しやすい構成を維持する

@@ -14,7 +14,7 @@
 | Entity | 役割 |
 |--------|------|
 | `RuleSet` | 公開利用されるダメージ計算ルールを表すマスタ |
-| `UserAuthorizationInfo` | 管理 UI / 管理 API の role と permission 文字列を保持する認可マスタ |
+| `UserAuthorizationInfo` | 管理クライアント / 管理 API の role と permission 文字列を保持する認可マスタ |
 
 ---
 
@@ -24,7 +24,7 @@
 
 - 世代別ダメージ計算ルールを管理する
 - 公開 API では `Active` のみ参照可能
-- 管理 API / UI では全状態を作成・更新・削除対象とする
+- 管理 API では全状態を作成・更新・削除対象とする
 
 ### 1-2. プロパティ
 

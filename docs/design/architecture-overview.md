@@ -1,6 +1,6 @@
 # アーキテクチャ概要
 
-> 対象システム: ストーリー攻略用ポケモンダメージ計算 Web / 管理 UI / 管理 API
+> 対象システム: ストーリー攻略用ポケモンダメージ計算 Web API / 管理 API
 > 関連ドキュメント: [domain-model.md](./domain-model.md) | [api-reference.md](./api-reference.md) | [cqrs-handlers.md](./cqrs-handlers.md)
 
 ---
@@ -13,14 +13,14 @@
 
 | 項目 | 方針 |
 |------|------|
-| Web ホスト | 既存 `PokemonDamageCalculatorForStory.Web` に公開 API・管理 API・管理 UI・管理ログインを集約 |
-| UI 方式 | 管理 UI は同一 Web プロジェクト内の server-rendered MVC (`Controllers` + Razor Views) で提供 |
+| Web ホスト | 既存 `PokemonDamageCalculatorForStory.Web` に公開 API と管理 API を集約 |
+| UI 方式 | 管理画面は別プロジェクトで実装し、本リポジトリの管理 API を利用する |
 | アプリケーション構造 | Hexagonal Architecture + CQRS + MediatR |
 | 管理対象 | `RuleSet` と `UserAuthorizationInfo` |
 | 認可モデル | `Administrator > MasterEditor > Member` |
 | Permission Catalog | `masters.view`, `masters.rulesets.manage`, `masters.user-authorizations.manage` |
 | 公開 RuleSet API | 匿名利用では `Active` のみ可視 |
-| 管理 UI 認証 | `POST /admin/login` で Google access token を検証し、`AdminCookie` を発行 |
+| 管理クライアント接続 | 本リポジトリは Bearer 認証の管理 API を提供し、管理画面は別プロジェクトから接続する |
 
 ---
 
@@ -30,7 +30,7 @@
 
 ```mermaid
 graph TD
-    Web["Web<br/>API Controllers / MVC Pages / Auth"]
+    Web["Web<br/>API Controllers / Auth"]
     App["Application<br/>Public Queries / Admin UseCases / DTOs / Validators"]
     Infra["Infrastructure<br/>EF Core / Repository / Logging"]
     Domain["Domain<br/>Entities / Ports / Invariants"]
@@ -46,7 +46,7 @@ graph TD
 
 | 層 | 責務 |
 |----|------|
-| Web | 公開 API、`/api/admin/*`、`/admin/*` MVC ページ、cookie ログイン/ログアウト、認証/認可ポリシー適用、actor 情報の受け渡し |
+| Web | 公開 API、`/api/admin/*`、認証/認可ポリシー適用、actor 情報の受け渡し |
 | Application | 公開系 Query、管理系 Command/Query、DTO、FluentValidation、派生表示項目の組み立て、admin mutation の監査イベント生成 |
 | Domain | `RuleSet` / `UserAuthorizationInfo` の不変条件、Port 定義 |
 | Infrastructure | CRUD、重複判定、参照中判定、管理者件数集計、構造化アプリケーションログ出力 |
@@ -57,23 +57,14 @@ graph TD
 
 ### 2-1. 同一ホスト方針
 
-- 管理 UI は既存 Web プロジェクト配下に追加する
-- 管理 UI は MVC Controller から MediatR の Command / Query を直接呼び出す
-- UI から `DbContext` や Repository を直接参照しない
-- 公開 API、管理 API、管理 UI の責務を Controller / UseCase で分離する
+- 本リポジトリは画面を返却せず、管理画面は別プロジェクトで提供する
+- 公開 API と管理 API の責務を Controller / UseCase で分離する
+- 外部の管理クライアントも `DbContext` や Repository を直接参照せず、本リポジトリの管理 API を利用する
 
 ### 2-2. 実装ルート
 
 | 種別 | ルート | 用途 |
 |------|--------|------|
-| UI | `/admin/login` | Google access token 入力と cookie セッション作成 |
-| UI | `/admin/masters/rule-sets` | RuleSet 一覧 |
-| UI | `/admin/masters/rule-sets/new` | RuleSet 新規作成 |
-| UI | `/admin/masters/rule-sets/{id}` | RuleSet 詳細/編集 |
-| UI | `/admin/masters/user-authorizations` | UserAuthorizationInfo 一覧 |
-| UI | `/admin/masters/user-authorizations/new` | UserAuthorizationInfo 新規作成 |
-| UI | `/admin/masters/user-authorizations/{googleUserId}` | UserAuthorizationInfo 詳細/編集 |
-| UI | `/admin/logout` | cookie セッション破棄 |
 | API | `/api/admin/rule-sets` | RuleSet 管理 API |
 | API | `/api/admin/user-authorizations` | UserAuthorizationInfo 管理 API |
 
@@ -93,14 +84,14 @@ graph TD
 
 | Policy | 認証スキーム | 許可ロール | 対象 |
 |--------|--------------|-----------|------|
-| `ManageBusinessMasters` | Bearer / `AdminCookie` | `Administrator`, `MasterEditor` | RuleSet 管理 UI / API |
-| `ManageAuthorizationMasters` | Bearer / `AdminCookie` | `Administrator` | UserAuthorizationInfo 管理 UI / API |
+| `ManageBusinessMasters` | Bearer | `Administrator`, `MasterEditor` | RuleSet 管理 API |
+| `ManageAuthorizationMasters` | Bearer | `Administrator` | UserAuthorizationInfo 管理 API |
 
 ### 3-3. Permission Catalog
 
 | Permission | 説明 | 備考 |
 |------------|------|------|
-| `masters.view` | 管理 UI / 管理 API の参照系識別用 | 保存・表示対象 |
+| `masters.view` | 管理クライアント / 管理 API の参照系識別用 | 保存・表示対象 |
 | `masters.rulesets.manage` | RuleSet 管理対象の識別用 | 保存・表示対象 |
 | `masters.user-authorizations.manage` | UserAuthorizationInfo 管理対象の識別用 | 保存・表示対象 |
 
@@ -109,8 +100,7 @@ graph TD
 - 認可判定は `UserAuthorizationInfo.Role` を基準に行う
 - `Permissions[]` は保存・表示対象で、管理用 Command の validator で catalog 値と重複有無のみを検証する
 - `Permissions[]` は role を上書きしない。allow/deny 判定は常に role-based policy を使う
-- 管理 UI は `AdminCookie` 認証を使い、既存 bearer API は維持する
-- bearer 認証ユーザーには `IClaimsTransformation` で DB 上の role / permissions を補完する
+- Bearer 認証ユーザーには `IClaimsTransformation` で DB 上の role / permissions を補完する
 
 ---
 
@@ -121,14 +111,14 @@ graph TD
 | 系統 | 用途 | 可視性 |
 |------|------|--------|
 | 公開 API | 計算用ルールセット参照 | `Active` のみ |
-| 管理 API / UI | RuleSet の作成・更新・削除・詳細参照 | policy に従う |
+| 管理 API | RuleSet の作成・更新・削除・詳細参照 | policy に従う |
 
 ### 4-2. UserAuthorizationInfo
 
 | 系統 | 用途 | 可視性 |
 |------|------|--------|
 | 公開 API | なし |
-| 管理 API / UI | ユーザー権限マスタ管理 | `Administrator` のみ |
+| 管理 API | ユーザー権限マスタ管理 | `Administrator` のみ |
 
 ---
 
@@ -151,31 +141,12 @@ sequenceDiagram
     Controller-->>Client: 200 OK
 ```
 
-### 5-2. 管理 UI ログイン
+### 5-2. 管理系更新
 
 ```mermaid
 sequenceDiagram
     participant Admin
-    participant Session as AdminSessionController
-    participant Google as Google Token Validator
-    participant Repo as IUserAuthorizationInfoRepository
-    participant Cookie as AdminCookie
-
-    Admin->>Session: POST /admin/login (accessToken)
-    Session->>Google: ValidateAsync(accessToken)
-    Google-->>Session: googleUserId / profile
-    Session->>Repo: FindByGoogleUserIdAsync()
-    Repo-->>Session: role / permissions
-    Session->>Cookie: SignInAsync(AdminCookie)
-    Session-->>Admin: 302 Redirect
-```
-
-### 5-3. 管理系更新
-
-```mermaid
-sequenceDiagram
-    participant Admin
-    participant Web as Admin API / MVC Controller
+    participant Web as Admin API Controller
     participant Policy as Authorization Policy
     participant Command as Admin Command Handler
     participant Domain
@@ -199,7 +170,7 @@ sequenceDiagram
 
 ### 6-1. 配置方針
 
-- 対象は admin mutation Command とし、API / MVC のどちらから呼ばれても同じ handler で記録する
+- 対象は admin mutation Command とし、管理 API から呼ばれたときに同じ handler で記録する
 - 監査ログ生成の責務は Application の admin command handler に置き、Web 層は actor/context の受け渡しに留める
 - 出力は Infrastructure の `IAdminAuditLogger` 実装が `ILogger` へ構造化ログ (`AdminAudit`) を出力する
 
@@ -228,5 +199,4 @@ sequenceDiagram
 
 - `isReferencedByRuns` は `FindReferencedRuleSetIdsAsync()`、`isLastAdministrator` は `CountByRoleAsync()` を使って Application で組み立てる
 - 一覧系クエリは `AsNoTracking` を基本とし、派生フラグ計算で N+1 を避ける
-- 管理 UI 一覧画面の検索はクライアント側フィルタリングで実装している
 - admin mutation の監査ログは Web 統合テストで「成功時と業務拒否時の双方で記録されること」を確認する

@@ -1,6 +1,5 @@
 using FluentValidation;
 using MediatR;
-using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc;
@@ -33,7 +32,7 @@ builder.Services.Configure<GoogleAuthenticationOptions>(builder.Configuration.Ge
 
 builder.Services.AddHttpClient<IGoogleAccessTokenValidationService, GoogleAccessTokenValidationService>();
 
-builder.Services.AddControllersWithViews();
+builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -61,15 +60,6 @@ builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = GoogleAuthenticationDefaults.AuthenticationScheme;
     options.DefaultChallengeScheme = GoogleAuthenticationDefaults.AuthenticationScheme;
-})
-.AddCookie(AdminCookieAuthenticationDefaults.AuthenticationScheme, options =>
-{
-    options.LoginPath = "/admin/login";
-    options.Events.OnRedirectToAccessDenied = context =>
-    {
-        context.Response.StatusCode = StatusCodes.Status403Forbidden;
-        return Task.CompletedTask;
-    };
 })
 .AddScheme<AuthenticationSchemeOptions, GoogleAccessTokenAuthenticationHandler>(GoogleAuthenticationDefaults.AuthenticationScheme, _ => { });
 

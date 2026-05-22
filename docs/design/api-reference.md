@@ -18,10 +18,6 @@
 | 管理 | `/api/admin/rule-sets*` | Bearer + `ManageBusinessMasters` | RuleSet 管理 |
 | 管理 | `/api/admin/user-authorizations*` | Bearer + `ManageAuthorizationMasters` | ユーザー権限管理 |
 
-> 管理 UI の cookie ログインは API とは別に `/admin/login` で提供する。
-
----
-
 ## 1. 認証・認可
 
 ### 1-1. API 認証
@@ -31,7 +27,7 @@
 | 公開 API | 匿名可 |
 | 管理 API | Google access token bearer 認証必須 |
 | 認可方式 | role-based policy |
-| UI 補足 | 管理 UI は `POST /admin/login` で access token を検証し、`AdminCookie` を発行する。未認証は login へ遷移し、認証済みだが認可不足の UI アクセスは `403 Forbidden` |
+| UI 補足 | 本リポジトリは管理 API のみを提供し、管理画面は別プロジェクトでこれらの API を利用する |
 
 ### 1-2. ポリシー
 
@@ -44,7 +40,7 @@
 
 | Permission | 用途 |
 |------------|------|
-| `masters.view` | 管理画面/管理 API の参照系識別 |
+| `masters.view` | 管理クライアント/管理 API の参照系識別 |
 | `masters.rulesets.manage` | RuleSet 管理の識別 |
 | `masters.user-authorizations.manage` | UserAuthorizationInfo 管理の識別 |
 
