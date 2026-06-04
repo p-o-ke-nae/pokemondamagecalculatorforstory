@@ -28,7 +28,12 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(connectionString, sqlServerOptions => sqlServerOptions.EnableRetryOnFailure()));
 
-builder.Services.Configure<GoogleAuthenticationOptions>(builder.Configuration.GetSection(GoogleAuthenticationOptions.SectionName));
+builder.Services.AddOptions<GoogleAuthenticationOptions>()
+    .Bind(builder.Configuration.GetSection(GoogleAuthenticationOptions.SectionName))
+    .Configure(options =>
+    {
+            options.ClientId = resolveGoogleClientId(builder.Configuration, options.ClientId);
+    });
 
 builder.Services.AddHttpClient<IGoogleAccessTokenValidationService, GoogleAccessTokenValidationService>();
 
@@ -208,6 +213,37 @@ static async Task applyDatabaseMigrationsAsync(WebApplication app)
 
         await Task.Delay(delay);
     }
+}
+
+static string resolveGoogleClientId(IConfiguration configuration, string configuredClientId)
+{
+        return firstNonEmpty(
+            configuredClientId,
+            configuration["GOOGLE_CLIENT_ID"],
+            tryReadSecretFile("/run/secrets/google_client_id"));
+}
+
+static string resolveBootstrapAdminGoogleUserId(IConfiguration configuration, string configuredGoogleUserId)
+{
+        return firstNonEmpty(
+            configuredGoogleUserId,
+            configuration["BOOTSTRAP_ADMIN_GOOGLE_USER_ID"],
+            tryReadSecretFile("/run/secrets/bootstrap_admin_google_user_id"));
+}
+
+static string firstNonEmpty(params string?[] values)
+{
+        return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
+}
+
+static string? tryReadSecretFile(string path)
+{
+        if (!File.Exists(path))
+        {
+                return null;
+        }
+
+        return File.ReadAllText(path).Trim();
 }
 
 public partial class Program;
