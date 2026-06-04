@@ -1,16 +1,24 @@
 using FluentValidation;
 using MediatR;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
+using PokemonDamageCalculatorForStory.Application.Auditing;
 using PokemonDamageCalculatorForStory.Application.Authorization;
+using PokemonDamageCalculatorForStory.Application.Behaviors;
+using PokemonDamageCalculatorForStory.Application.UseCases.Commands;
+using PokemonDamageCalculatorForStory.Application.Validators;
 using PokemonDamageCalculatorForStory.Authentication;
 using PokemonDamageCalculatorForStory.Authorization;
+using PokemonDamageCalculatorForStory.Domain.Exceptions;
 using PokemonDamageCalculatorForStory.Domain.Ports;
 using PokemonDamageCalculatorForStory.Infrastructure.Data;
+using PokemonDamageCalculatorForStory.Infrastructure.Logging;
 using PokemonDamageCalculatorForStory.Infrastructure.Repositories;
+using DomainValidationException = PokemonDamageCalculatorForStory.Domain.Exceptions.ValidationException;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,73 +28,120 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(connectionString, sqlServerOptions => sqlServerOptions.EnableRetryOnFailure()));
 
-builder.Services.Configure<GoogleAuthenticationOptions>(
-    builder.Configuration.GetSection(GoogleAuthenticationOptions.SectionName));
+builder.Services.AddOptions<GoogleAuthenticationOptions>()
+    .Bind(builder.Configuration.GetSection(GoogleAuthenticationOptions.SectionName))
+    .Configure(options =>
+    {
+            options.ClientId = resolveGoogleClientId(builder.Configuration, options.ClientId);
+    });
 
 builder.Services.AddHttpClient<IGoogleAccessTokenValidationService, GoogleAccessTokenValidationService>();
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo
     {
-        options.SwaggerDoc("v1", new OpenApiInfo
-        {
-            Title = "PokemonDamageCalculatorForStory API",
-            Version = "v1",
-            Description = "Authorization ヘッダーに Google access token を指定して、保護された Web API を試せます。"
-        });
-
-        options.AddSecurityDefinition(GoogleAuthenticationDefaults.AuthenticationScheme, new OpenApiSecurityScheme
-        {
-            Type = SecuritySchemeType.Http,
-            Scheme = "bearer",
-            BearerFormat = "Google access token",
-            In = ParameterLocation.Header,
-            Name = "Authorization",
-            Description = "Google ログインで取得した access token を貼り付けてください。JWT 発行エンドポイントは不要です。"
-        });
-
-        options.OperationFilter<AuthorizeOperationFilter>();
+        Title = "PokemonDamageCalculatorForStory API",
+        Version = "v1",
+        Description = "ストーリー攻略用ポケモンダメージ計算 Web API"
     });
 
-builder.Services.AddAuthentication(options =>
+    options.AddSecurityDefinition(GoogleAuthenticationDefaults.AuthenticationScheme, new OpenApiSecurityScheme
     {
-        options.DefaultAuthenticateScheme = GoogleAuthenticationDefaults.AuthenticationScheme;
-        options.DefaultChallengeScheme = GoogleAuthenticationDefaults.AuthenticationScheme;
-    })
-    .AddScheme<AuthenticationSchemeOptions, GoogleAccessTokenAuthenticationHandler>(
-        GoogleAuthenticationDefaults.AuthenticationScheme,
-        _ => { });
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "Google access token",
+        In = ParameterLocation.Header,
+        Name = "Authorization",
+        Description = "Google ログインで取得した access token を貼り付けてください。"
+    });
+
+    options.OperationFilter<AuthorizeOperationFilter>();
+});
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = GoogleAuthenticationDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = GoogleAuthenticationDefaults.AuthenticationScheme;
+})
+.AddScheme<AuthenticationSchemeOptions, GoogleAccessTokenAuthenticationHandler>(GoogleAuthenticationDefaults.AuthenticationScheme, _ => { });
 
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy(AppPolicies.ManageWeatherForecast, policy =>
-    {
-        policy.RequireAuthenticatedUser();
-        policy.AddRequirements(new WeatherForecastManagementRequirement());
-    });
+    options.AddPolicy(AppPolicies.ManageBusinessMasters, policy =>
+        policy.RequireRole(AppRoles.Administrator, AppRoles.MasterEditor));
+
+    options.AddPolicy(AppPolicies.ManageAuthorizationMasters, policy =>
+        policy.RequireRole(AppRoles.Administrator));
 });
 
-// MediatR 登録（Application層のHandlers自動登録）
 builder.Services.AddMediatR(cfg =>
-    cfg.RegisterServicesFromAssembly(typeof(PokemonDamageCalculatorForStory.Application.UseCases.Commands.CreateWeatherForecastCommand).Assembly));
+    cfg.RegisterServicesFromAssembly(typeof(CreateRunCommand).Assembly));
 
-// Repository 登録
-builder.Services.AddScoped<IWeatherForecastRepository, WeatherForecastRepository>();
+builder.Services.AddValidatorsFromAssembly(typeof(CreateRunCommandValidator).Assembly);
+
+builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+
+builder.Services.AddScoped<IRuleSetRepository, RuleSetRepository>();
+builder.Services.AddScoped<IRunRepository, RunRepository>();
+builder.Services.AddScoped<IBattleRepository, BattleRepository>();
 builder.Services.AddScoped<IUserAuthorizationInfoRepository, UserAuthorizationInfoRepository>();
-builder.Services.AddScoped<IWeatherForecastAccessEvaluator, WeatherForecastAccessEvaluator>();
-builder.Services.AddScoped<IAuthorizationHandler, WeatherForecastManagementAuthorizationHandler>();
-
-// FluentValidation 登録（将来:バリデーション Pipeline を追加予定）
-// builder.Services.AddValidatorsFromAssemblyContaining<CreateWeatherForecastCommandValidator>();
+builder.Services.AddScoped<IAdminAuditLogger, AdminAuditLogger>();
+builder.Services.AddTransient<IClaimsTransformation, UserAuthorizationClaimsTransformation>();
 
 var app = builder.Build();
-var useHttpsRedirection = shouldUseHttpsRedirection(app.Configuration);
 
 if (!app.Environment.IsProduction())
 {
     await applyDatabaseMigrationsAsync(app);
 }
+
+app.UseExceptionHandler(exceptionHandlerApp =>
+{
+    exceptionHandlerApp.Run(async context =>
+    {
+        var exception = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+
+        var problemDetails = exception switch
+        {
+            NotFoundException notFoundException => new ProblemDetails
+            {
+                Status = StatusCodes.Status404NotFound,
+                Title = "Resource not found.",
+                Detail = notFoundException.Message
+            },
+            DomainValidationException validationException => new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "Validation failed.",
+                Detail = validationException.Message
+            },
+            ConflictException conflictException => new ProblemDetails
+            {
+                Status = StatusCodes.Status409Conflict,
+                Title = "Conflict detected.",
+                Detail = conflictException.Message
+            },
+            DomainException domainException => new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "Domain rule violated.",
+                Detail = domainException.Message
+            },
+            _ => new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "An unexpected error occurred."
+            }
+        };
+
+        context.Response.StatusCode = problemDetails.Status ?? StatusCodes.Status500InternalServerError;
+        context.Response.ContentType = "application/problem+json";
+        await context.Response.WriteAsJsonAsync(problemDetails);
+    });
+});
 
 if (app.Environment.IsDevelopment())
 {
@@ -94,24 +149,20 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-if (useHttpsRedirection)
+if (shouldUseHttpsRedirection(app.Configuration))
 {
     app.UseHttpsRedirection();
 }
 
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
 
 await app.RunAsync();
 
 static bool shouldUseHttpsRedirection(IConfiguration configuration)
 {
-    var isRunningInContainer = string.Equals(
-        configuration["DOTNET_RUNNING_IN_CONTAINER"],
-        "true",
-        StringComparison.OrdinalIgnoreCase);
+    var isRunningInContainer = string.Equals(configuration["DOTNET_RUNNING_IN_CONTAINER"], "true", StringComparison.OrdinalIgnoreCase);
 
     if (!isRunningInContainer)
     {
@@ -120,8 +171,7 @@ static bool shouldUseHttpsRedirection(IConfiguration configuration)
 
     return !string.IsNullOrWhiteSpace(configuration["ASPNETCORE_HTTPS_PORTS"])
         || !string.IsNullOrWhiteSpace(configuration["HTTPS_PORT"])
-        || (!string.IsNullOrWhiteSpace(configuration["ASPNETCORE_URLS"])
-            && configuration["ASPNETCORE_URLS"]!.Contains("https://", StringComparison.OrdinalIgnoreCase));
+        || (!string.IsNullOrWhiteSpace(configuration["ASPNETCORE_URLS"]) && configuration["ASPNETCORE_URLS"]!.Contains("https://", StringComparison.OrdinalIgnoreCase));
 }
 
 static async Task applyDatabaseMigrationsAsync(WebApplication app)
@@ -154,15 +204,46 @@ static async Task applyDatabaseMigrationsAsync(WebApplication app)
         }
         catch (SqlException ex) when (attempt < maxAttempts)
         {
-            app.Logger.LogWarning(ex, "SQL Server is not ready yet. Retrying database migration. Attempt {Attempt} of {MaxAttempts}.", attempt, maxAttempts);
+            app.Logger.LogWarning(ex, "SQL Server is not ready yet. Attempt {Attempt} of {MaxAttempts}.", attempt, maxAttempts);
         }
         catch (InvalidOperationException ex) when (attempt < maxAttempts)
         {
-            app.Logger.LogWarning(ex, "Database migration failed during startup. Retrying. Attempt {Attempt} of {MaxAttempts}.", attempt, maxAttempts);
+            app.Logger.LogWarning(ex, "Database migration failed. Attempt {Attempt} of {MaxAttempts}.", attempt, maxAttempts);
         }
 
         await Task.Delay(delay);
     }
+}
+
+static string resolveGoogleClientId(IConfiguration configuration, string configuredClientId)
+{
+        return firstNonEmpty(
+            configuredClientId,
+            configuration["GOOGLE_CLIENT_ID"],
+            tryReadSecretFile("/run/secrets/google_client_id"));
+}
+
+static string resolveBootstrapAdminGoogleUserId(IConfiguration configuration, string configuredGoogleUserId)
+{
+        return firstNonEmpty(
+            configuredGoogleUserId,
+            configuration["BOOTSTRAP_ADMIN_GOOGLE_USER_ID"],
+            tryReadSecretFile("/run/secrets/bootstrap_admin_google_user_id"));
+}
+
+static string firstNonEmpty(params string?[] values)
+{
+        return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
+}
+
+static string? tryReadSecretFile(string path)
+{
+        if (!File.Exists(path))
+        {
+                return null;
+        }
+
+        return File.ReadAllText(path).Trim();
 }
 
 public partial class Program;

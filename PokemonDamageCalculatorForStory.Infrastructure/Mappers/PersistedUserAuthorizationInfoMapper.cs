@@ -12,4 +12,20 @@ public static class PersistedUserAuthorizationInfoMapper
             persisted.Role,
             persisted.Permissions.Select(permission => permission.Permission));
     }
+
+    public static PersistedUserAuthorizationInfo ToPersistedModel(this UserAuthorizationInfo entity)
+    {
+        return new PersistedUserAuthorizationInfo
+        {
+            GoogleUserId = entity.GoogleUserId,
+            Role = entity.Role,
+            Permissions = entity.Permissions
+                .Select(permission => new PersistedUserPermission
+                {
+                    GoogleUserId = entity.GoogleUserId,
+                    Permission = permission
+                })
+                .ToList()
+        };
+    }
 }

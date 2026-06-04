@@ -1,142 +1,109 @@
 # テスト戦略
 
-> 対象システム: ストーリー攻略用ポケモンダメージ計算 Web API
+> 対象システム: ストーリー攻略用ポケモンダメージ計算 Web API / 管理 API
 > 関連ドキュメント: [architecture-overview.md](../design/architecture-overview.md) | [domain-model.md](../design/domain-model.md)
 
 ---
 
 ## 概要
 
-本ドキュメントはテスト戦略とテスト対象の一覧を定義する。
+本ドキュメントは、実装済みの管理マスタ保守機能に対するテスト観点を整理する。
 
-### テスト構成サマリ
+### 重点観点
 
-| 種別 | 数 | DB 接続 |
-|------|-----|---------|
-| ユニットテスト | 4 クラス | 不要 |
-| 統合テスト | 3 クラス | SQL Server 必要 |
-
----
-
-## 1. ユニットテスト
-
-DB 接続不要。高速に実行できる。
-
-### 対象クラスと検証内容
-
-| テストクラス | 配置パス | テスト対象 | 検証内容 |
-|------------|---------|-----------|---------|
-| `DamageCalculatorTests` | `Tests/Domain/DamageCalculatorTests.cs` | `Domain/DamageCalculator.cs` | 計算式の正確性（境界値・STAB・タイプ相性・乱数16段階全値） |
-| `RunTests` | `Tests/Domain/Entities/RunTests.cs` | `Domain/Entities/Run.cs` | Create バリデーション（空白名・空 Guid）、Restore、Update |
-| `BattleTests` | `Tests/Domain/Entities/BattleTests.cs` | `Domain/Entities/Battle.cs` | Create バリデーション（Sequence ≥ 1・空 RunId）、Restore、Update |
-| `CalculateDamageCommandHandlerTests` | `Tests/Application/UseCases/Commands/CalculateDamageCommandHandlerTests.cs` | `Application/.../CalculateDamageCommandHandler.cs` | Handler 入出力検証・DamageRolls 16件返却・MinDamage/MaxDamage 正確性 |
-
-### DamageCalculatorTests の主なテストケース
-
-| テストケース | 検証内容 |
-|------------|---------|
-| 通常ダメージ（標準パラメータ） | 計算結果の16段階すべてが正値 |
-| STAB ありダメージ | `HasStab = true` 時に `HasStab = false` より大きい値 |
-| タイプ相性 2 倍 | 通常の約 2 倍の値 |
-| タイプ相性 0 倍 | 全16段階が 0 |
-| 最小ダメージ（roll = 85） | `DamageRolls[0]` が最小値 |
-| 最大ダメージ（roll = 100） | `DamageRolls[15]` が最大値 |
-| 境界値（Level = 1） | 0 以上の値が返ること |
+| 観点 | 内容 |
+|------|------|
+| 認可 | `Administrator` / `MasterEditor` / `Member` の許可差分 |
+| 認証 | bearer 管理 API の認証/認可 |
+| Permission Catalog | catalog 値制約と重複拒否 |
+| 公開非退行 | 公開 RuleSet API が `Active` のみ返すこと |
+| 管理整合性 | slug 重複、参照中削除、最後の Administrator 保護 |
+| 監査ログ | admin mutation の成功/拒否時に監査記録が残ること |
+| API 契約 | 管理 API の応答コード、競合時の `ProblemDetails`、公開 API 非退行 |
 
 ---
 
-## 2. 統合テスト
+## 1. Domain / Application テスト
 
-SQL Server への接続が必要。既存 `InfrastructureSqlServerTestDatabase` パターンを継承して実装する。
-
-### 対象クラスと検証内容
-
-| テストクラス | 配置パス | テスト対象 | 検証内容 |
-|------------|---------|-----------|---------|
-| `RuleSetRepositoryTests` | `Tests/Infrastructure/Repositories/RuleSetRepositoryTests.cs` | `Infrastructure/Repositories/RuleSetRepository.cs` | GetAll・FindById・FindBySlug |
-| `RunRepositoryTests` | `Tests/Infrastructure/Repositories/RunRepositoryTests.cs` | `Infrastructure/Repositories/RunRepository.cs` | CRUD・GetAllByOwnerId（所有者フィルタ）・削除後の FindById null |
-| `BattleRepositoryTests` | `Tests/Infrastructure/Repositories/BattleRepositoryTests.cs` | `Infrastructure/Repositories/BattleRepository.cs` | CRUD・Value Object（`EnemyPokemonParams`）の OwnsOne 永続化と復元 |
-
-### 統合テスト基盤
-
-```csharp
-// 既存パターンを継承
-// Tests/Infrastructure/TestSupport/InfrastructureSqlServerTestDatabase.cs
-```
-
-Docker Compose を使用してテスト用 SQL Server を起動する。
-
-```bash
-docker compose -f docker-compose.dotnet.test-db.yml up -d
-```
+| 対象 | 主な確認内容 |
+|------|--------------|
+| `RuleSet` | status 値、必須項目、長さ制約 |
+| `UserAuthorizationInfo` | GoogleUserId 必須、role 必須、permissions 重複拒否 |
+| Admin Validators | request 形式、必須項目、列挙値、catalog 外 permission 拒否 |
+| Public RuleSet Query | `Active` フィルタ、不可視 RuleSet の 404 化 |
+| Admin command handlers | slug 重複、最後の Administrator 保護、監査 logger 呼び出し |
 
 ---
 
-## 3. テスト配置規則
+## 2. Infrastructure 統合テスト
 
-テストファイルは以下の規則に従って配置する。
+| 対象 | 主な確認内容 |
+|------|--------------|
+| RuleSet repository | CRUD、slug 重複確認、参照中 RuleSet 判定 |
+| UserAuthorizationInfo repository | CRUD、permissions 復元、管理者件数集計 |
+| Audit logger | `AdminAudit` 構造化ログ出力 |
+| 一覧取得 | `isReferencedByRuns` / `isLastAdministrator` 計算に必要な集計結果 |
 
-```
-PokemonDamageCalculatorForStory.Tests/
-├── Domain/
-│   ├── DamageCalculatorTests.cs            ← ユニットテスト
-│   └── Entities/
-│       ├── RunTests.cs                     ← ユニットテスト
-│       └── BattleTests.cs                  ← ユニットテスト
-├── Application/
-│   └── UseCases/
-│       └── Commands/
-│           └── CalculateDamageCommandHandlerTests.cs  ← ユニットテスト
-├── Infrastructure/
-│   └── Repositories/
-│       ├── RuleSetRepositoryTests.cs       ← 統合テスト
-│       ├── RunRepositoryTests.cs           ← 統合テスト
-│       └── BattleRepositoryTests.cs        ← 統合テスト
-└── TestSupport/
-    └── InfrastructureSqlServerTestDatabase.cs  ← 統合テスト基盤（既存）
-```
-
-> 配置規則: `Tests/<TargetProject>/<相対パス>/<TargetClass>Tests.cs`
+> 一意制約や競合系の確認は InMemory DB だけで代替しない。
 
 ---
 
-## 4. テスト実行コマンド
+## 3. Web 統合テスト
 
-### 全テスト実行
+### 3-1. 管理 API
 
-```bash
-# テスト用 DB を起動してから実行
-docker compose -f docker-compose.dotnet.test-db.yml up -d
-dotnet test PokemonDamageCalculatorForStory.sln
-```
+| シナリオ | 期待結果 |
+|---------|----------|
+| 匿名で `/api/admin/rule-sets` | `401` |
+| `Member` で `/api/admin/rule-sets` | `403` |
+| `MasterEditor` で RuleSet 管理 API | 許可 |
+| `MasterEditor` で UserAuthorizationInfo 管理 API | `403` |
+| `Administrator` で UserAuthorizationInfo 管理 API | 許可 |
+| catalog 外 permission を指定 | `400` |
+| duplicate permission を指定 | `400` |
+| slug 重複作成/更新 | `409` |
+| 参照中 RuleSet 削除 | `409` |
+| 最後の Administrator の role 変更/削除 | `409` |
+| 最後の Administrator の permissions-only 更新 | `200` |
+| RuleSet 作成成功 | 監査ログに `Succeeded` が記録される |
+| RuleSet 削除が参照中で失敗 | 監査ログに `Rejected` が記録される |
+| UserAuthorization 更新成功 | 監査ログに `Succeeded` が記録される |
 
-### ユニットテストのみ実行（DB 不要）
+### 3-2. 公開 API 非退行
 
-```bash
-dotnet test PokemonDamageCalculatorForStory.sln --filter "Category!=Integration"
-```
+| シナリオ | 期待結果 |
+|---------|----------|
+| `GET /api/rule-sets` | `Active` のみ返却 |
+| `GET /api/rule-sets/{id}` で `Draft` | `404` |
+| `GET /api/rule-sets/{id}` で `Archived` | `404` |
 
-### 統合テストのみ実行
+## 4. API 観点
 
-```bash
-docker compose -f docker-compose.dotnet.test-db.yml up -d
-dotnet test PokemonDamageCalculatorForStory.sln --filter "Category=Integration"
-```
-
-### ビルド確認後にテスト実行
-
-```bash
-dotnet build PokemonDamageCalculatorForStory.sln
-dotnet test PokemonDamageCalculatorForStory.sln --no-build
-```
+| 対象 | 主な確認内容 |
+|------|--------------|
+| RuleSet 管理 API | 一覧、詳細、作成、更新、削除、`409` 系競合、監査ログ |
+| UserAuthorization 管理 API | 一覧、詳細、作成、更新、削除、最後の Administrator 保護、監査ログ |
+| 公開 RuleSet API | `Active` のみ返却、非公開状態の `404` |
+| エラー契約 | `400` / `401` / `403` / `404` / `409` の `ProblemDetails` 応答 |
 
 ---
 
-## 5. 受け入れ基準との対応
+## 5. テストデータ方針
 
-| 受け入れ基準 | 対応するテスト |
-|------------|-------------|
-| AC-1: `dotnet build` 成功 | CI パイプライン / ローカルビルド確認 |
-| AC-2: `dotnet test` 成功 | 全テスト実行 |
-| AC-3: アーキテクチャ準拠（CQRS・Create/Restore） | `RunTests`, `BattleTests`, `CalculateDamageCommandHandlerTests` |
-| AC-5: ダメージ計算式の正確性・16段階ロール | `DamageCalculatorTests`, `CalculateDamageCommandHandlerTests` |
+- `Administrator` / `MasterEditor` / `Member` の 3 種類を固定データで用意する
+- `RuleSet` は `Active` / `Draft` / `Archived` を最低 1 件ずつ用意する
+- 参照中 RuleSet と未参照 RuleSet を分けて用意する
+- 最後の Administrator ケースを再現できるデータを用意する
+
+---
+
+## 6. 受け入れ基準への対応
+
+| 受け入れ観点 | テスト種別 |
+|-------------|-----------|
+| RuleSet 管理 CRUD | Web 統合 + Infrastructure |
+| UserAuthorizationInfo 管理 CRUD | Web 統合 + Infrastructure |
+| role 階層の反映 | Web 統合 |
+| permission catalog の明示値制約 | Domain / Application / Web 統合 |
+| admin mutation の監査証跡 | Application / Web 統合 |
+| 公開 RuleSet API の `Active` 制限 | Application / Web 統合 |

@@ -1,256 +1,206 @@
 # API リファレンス
 
-> 対象システム: ストーリー攻略用ポケモンダメージ計算 Web API
+> 対象システム: ストーリー攻略用ポケモンダメージ計算 Web API / 管理 API
 > 関連ドキュメント: [architecture-overview.md](./architecture-overview.md) | [domain-model.md](./domain-model.md) | [cqrs-handlers.md](./cqrs-handlers.md)
 
 ---
 
 ## 概要
 
-本ドキュメントは全 API エンドポイントの仕様を定義する。
+本ドキュメントは、実装済みの公開 API と管理 API の契約を整理する。
 
-### エンドポイント一覧
+### エンドポイント要約
 
-| Method | Path | 説明 | 認証 |
-|--------|------|------|------|
-| `GET` | `/api/rule-sets` | ルールセット一覧取得 | Anonymous |
-| `GET` | `/api/rule-sets/{id}` | ルールセット詳細取得 | Anonymous |
-| `GET` | `/api/runs` | Run 一覧取得 | 必須 |
-| `POST` | `/api/runs` | Run 作成 | 必須 |
-| `GET` | `/api/runs/{id}` | Run 詳細取得 | 必須 |
-| `PUT` | `/api/runs/{id}` | Run 更新 | 必須（所有権チェック） |
-| `DELETE` | `/api/runs/{id}` | Run 削除 | 必須（所有権チェック） |
-| `GET` | `/api/runs/{runId}/battles` | Battle 一覧取得 | 必須 |
-| `POST` | `/api/runs/{runId}/battles` | Battle 作成 | 必須 |
-| `PUT` | `/api/runs/{runId}/battles/{id}` | Battle 更新 | 必須 |
-| `DELETE` | `/api/runs/{runId}/battles/{id}` | Battle 削除 | 必須 |
-| `POST` | `/api/runs/{runId}/battles/{id}/calculate` | ダメージ計算実行 | Anonymous |
-| `GET` | `/api/runs/{runId}/party-state` | パーティ状態取得 | 必須 |
-| `POST` | `/api/runs/{runId}/party-state` | 進捗イベント追加 | 必須 |
+| 区分 | Path | 認証/認可 | 目的 |
+|------|------|-----------|------|
+| 公開 | `/api/rule-sets` | Anonymous | `Active` な RuleSet 一覧 |
+| 公開 | `/api/rule-sets/{id}` | Anonymous | `Active` な RuleSet 詳細 |
+| 管理 | `/api/admin/rule-sets*` | Bearer + `ManageBusinessMasters` | RuleSet 管理 |
+| 管理 | `/api/admin/user-authorizations*` | Bearer + `ManageAuthorizationMasters` | ユーザー権限管理 |
 
-> 計 14 エンドポイント（ルールセット 2 + Run 5 + Battle 5 + ダメージ計算 1 + パーティ状態 1）
-> `[Authorize]` は Google Access Token による認証を要求する。
+## 1. 認証・認可
 
----
-
-## 1. 認証
+### 1-1. API 認証
 
 | 項目 | 内容 |
 |------|------|
-| 認証方式 | Google Access Token（Bearer） |
-| Anonymous エンドポイント | `GET /api/rule-sets`, `GET /api/rule-sets/{id}`, `POST .../calculate` |
-| 認証必須エンドポイント | 上記以外すべて |
-| 所有権チェック | Run の `PUT` / `DELETE` は Handler 内で `OwnerId` を確認する |
+| 公開 API | 匿名可 |
+| 管理 API | Google access token bearer 認証必須 |
+| 認可方式 | role-based policy |
+| UI 補足 | 本リポジトリは管理 API のみを提供し、管理画面は別プロジェクトでこれらの API を利用する |
+
+### 1-2. ポリシー
+
+| Policy | 許可ロール |
+|--------|-----------|
+| `ManageBusinessMasters` | `Administrator`, `MasterEditor` |
+| `ManageAuthorizationMasters` | `Administrator` |
+
+### 1-3. Permission Catalog
+
+| Permission | 用途 |
+|------------|------|
+| `masters.view` | 管理クライアント/管理 API の参照系識別 |
+| `masters.rulesets.manage` | RuleSet 管理の識別 |
+| `masters.user-authorizations.manage` | UserAuthorizationInfo 管理の識別 |
+
+- allow/deny 判定は上表ではなく policy + role で行う
+- `permissions` は catalog 値と重複有無を validator で検証する
+- `permissions` の role 整合性は現行実装では API 契約として強制しない
 
 ---
 
-## 2. ルールセット
+## 2. 公開 RuleSet API
 
 ### GET /api/rule-sets
 
-ルールセット一覧を取得する。
-
 - **認証**: Anonymous
-- **リクエスト本文**: なし
-- **レスポンス**: `200 OK` — `RuleSetResponseDto[]`
+- **レスポンス**: `200 OK` — `RuleSetDto[]`
+- **可視性**: `Status == Active` のみ返却
 
 ### GET /api/rule-sets/{id}
 
-指定 ID のルールセットを取得する。
-
 - **認証**: Anonymous
-- **パスパラメータ**: `id: Guid`
-- **レスポンス**: `200 OK` — `RuleSetResponseDto` / `404 Not Found`
+- **パス**: `id: Guid`
+- **レスポンス**: `200 OK` — `RuleSetDto`
+- **不可視時**: `Draft` / `Archived` / 不存在は `404 Not Found`
 
 ---
 
-## 3. Run
+## 3. 管理 RuleSet API
 
-### GET /api/runs
+### 一覧・作成
 
-認証ユーザーの Run 一覧を取得する（他ユーザーの Run は返さない）。
+| Method | Path | 正常系 | Policy |
+|--------|------|--------|--------|
+| `GET` | `/api/admin/rule-sets` | `200 OK` | `ManageBusinessMasters` |
+| `POST` | `/api/admin/rule-sets` | `201 Created` | `ManageBusinessMasters` |
 
-- **認証**: 必須
-- **レスポンス**: `200 OK` — `RunResponseDto[]`
+### 詳細・更新・削除
 
-### POST /api/runs
+| Method | Path | 正常系 | Policy |
+|--------|------|--------|--------|
+| `GET` | `/api/admin/rule-sets/{id}` | `200 OK` | `ManageBusinessMasters` |
+| `PUT` | `/api/admin/rule-sets/{id}` | `200 OK` | `ManageBusinessMasters` |
+| `DELETE` | `/api/admin/rule-sets/{id}` | `204 NoContent` | `ManageBusinessMasters` |
 
-Run を新規作成する。
+### 契約メモ
 
-- **認証**: 必須
-- **リクエスト本文**: `CreateRunRequest`
-- **レスポンス**: `200 OK` — `RunResponseDto`
-
-### GET /api/runs/{id}
-
-指定 ID の Run を取得する。
-
-- **認証**: 必須
-- **パスパラメータ**: `id: Guid`
-- **レスポンス**: `200 OK` — `RunResponseDto` / `404 Not Found`
-
-### PUT /api/runs/{id}
-
-Run を更新する。所有者のみ操作可能。
-
-- **認証**: 必須（所有権チェック）
-- **パスパラメータ**: `id: Guid`
-- **リクエスト本文**: `UpdateRunRequest`
-- **レスポンス**: `200 OK` — `RunResponseDto` / `403 Forbidden` / `404 Not Found`
-
-### DELETE /api/runs/{id}
-
-Run を削除する。所有者のみ操作可能。
-
-- **認証**: 必須（所有権チェック）
-- **パスパラメータ**: `id: Guid`
-- **レスポンス**: `204 No Content` / `403 Forbidden` / `404 Not Found`
+- 管理 API は `Active` / `Draft` / `Archived` の全状態を扱う
+- `DELETE` は参照中 Run がある場合 `409 Conflict`
+- `Slug` 重複は `409 Conflict`
+- 一覧/詳細 DTO には `isReferencedByRuns` を含める
+- `POST` / `PUT` / `DELETE` は監査ログ対象で、成功時も業務拒否時も記録する
 
 ---
 
-## 4. Battle
+## 4. 管理 UserAuthorizationInfo API
 
-### GET /api/runs/{runId}/battles
+### 一覧・作成
 
-指定 Run の Battle 一覧を取得する。
+| Method | Path | 正常系 | Policy |
+|--------|------|--------|--------|
+| `GET` | `/api/admin/user-authorizations` | `200 OK` | `ManageAuthorizationMasters` |
+| `POST` | `/api/admin/user-authorizations` | `201 Created` | `ManageAuthorizationMasters` |
 
-- **認証**: 必須
-- **パスパラメータ**: `runId: Guid`
-- **レスポンス**: `200 OK` — `BattleResponseDto[]`
+### 詳細・更新・削除
 
-### POST /api/runs/{runId}/battles
+| Method | Path | 正常系 | Policy |
+|--------|------|--------|--------|
+| `GET` | `/api/admin/user-authorizations/{googleUserId}` | `200 OK` | `ManageAuthorizationMasters` |
+| `PUT` | `/api/admin/user-authorizations/{googleUserId}` | `200 OK` | `ManageAuthorizationMasters` |
+| `DELETE` | `/api/admin/user-authorizations/{googleUserId}` | `204 NoContent` | `ManageAuthorizationMasters` |
 
-Battle を新規作成する。
+### 契約メモ
 
-- **認証**: 必須
-- **パスパラメータ**: `runId: Guid`
-- **リクエスト本文**: `CreateBattleRequest`
-- **レスポンス**: `200 OK` — `BattleResponseDto`
-
-### PUT /api/runs/{runId}/battles/{id}
-
-Battle を更新する。
-
-- **認証**: 必須
-- **パスパラメータ**: `runId: Guid`, `id: Guid`
-- **リクエスト本文**: `UpdateBattleRequest`
-- **レスポンス**: `200 OK` — `BattleResponseDto` / `404 Not Found`
-
-### DELETE /api/runs/{runId}/battles/{id}
-
-Battle を削除する。
-
-- **認証**: 必須
-- **パスパラメータ**: `runId: Guid`, `id: Guid`
-- **レスポンス**: `204 No Content` / `404 Not Found`
-
-### POST /api/runs/{runId}/battles/{id}/calculate
-
-ダメージ計算を実行する。**DB への書き込みは行わない**（ステートレス計算）。
-
-- **認証**: Anonymous
-- **パスパラメータ**: `runId: Guid`, `id: Guid`
-- **リクエスト本文**: `CalculateDamageRequest`
-- **レスポンス**: `200 OK` — `CalculateDamageResponseDto`
+- 対象ロールは `Administrator` / `MasterEditor` / `Member`
+- `permissions` は catalog 値のみ許可し、重複は拒否する
+- 最後の `Administrator` の role 変更/削除は `409 Conflict`
+- 最後の `Administrator` でも permissions-only 更新は許可される
+- 一覧/詳細 DTO には `isLastAdministrator` を含め、`permissions` はソート済みで返す
+- `POST` / `PUT` / `DELETE` は監査ログ対象で、成功時も業務拒否時も記録する
 
 ---
 
-## 5. パーティ状態
+## 5. DTO
 
-### GET /api/runs/{runId}/party-state
-
-指定 Run のパーティ状態（OwnPokemonSnapshot 一覧）を取得する。
-
-- **認証**: 必須
-- **パスパラメータ**: `runId: Guid`
-- **レスポンス**: `200 OK` — `PartyStateResponseDto`
-
-### POST /api/runs/{runId}/party-state
-
-進捗イベントを追加する。
-
-- **認証**: 必須
-- **パスパラメータ**: `runId: Guid`
-- **リクエスト本文**: `AddProgressionEventRequest`
-- **レスポンス**: `200 OK` — `PartyStateResponseDto`
-
----
-
-## 6. DTO 定義
-
-### Request DTO
+### 公開 DTO
 
 ```csharp
-record CreateRunRequest(string Name, Guid RuleSetId);
-record UpdateRunRequest(string Name, string Status);
-
-record CreateBattleRequest(int Sequence, EnemyPokemonParamsDto EnemyPokemon);
-record UpdateBattleRequest(int Sequence, EnemyPokemonParamsDto EnemyPokemon);
-
-record CalculateDamageRequest(AttackerParamsDto Attacker, DefenderParamsDto Defender);
-
-record AddProgressionEventRequest(string PokemonId, string EventType, object? EventData);
+public sealed record RuleSetDto(
+    Guid Id,
+    string Slug,
+    int Generation,
+    string Title,
+    string Version,
+    string Status,
+    string Summary);
 ```
 
-### 共有 DTO
+### 管理 DTO
 
 ```csharp
-record EnemyPokemonParamsDto(
-    string Species,
-    int Level,
-    int Hp,
-    int Attack,
-    int Defense,
-    int SpAtk,
-    int SpDef,
-    int Speed,
-    string Type1,
-    string? Type2
-);
+public sealed record AdminRuleSetDto(
+    Guid Id,
+    string Slug,
+    int Generation,
+    string Title,
+    string Version,
+    string Status,
+    string Summary,
+    bool IsReferencedByRuns);
 
-record AttackerParamsDto(
-    int Level,
-    int Attack,
-    int MovePower,
-    string MoveCategory,   // "Physical" or "Special"
-    bool HasStab,
-    decimal TypeEffectiveness
-);
-
-record DefenderParamsDto(int Defense);
+public sealed record AdminUserAuthorizationDto(
+    string GoogleUserId,
+    string Role,
+    IReadOnlyList<string> Permissions,
+    bool IsLastAdministrator);
 ```
 
-### Response DTO
+### 管理 Request DTO
 
 ```csharp
-record RuleSetResponseDto(Guid Id, string Slug, int Generation, string Title, string Version, string Status);
+public sealed record AdminRuleSetUpsertRequest(
+    string Slug,
+    int Generation,
+    string Title,
+    string Version,
+    string Status,
+    string Summary);
 
-record RunResponseDto(Guid Id, string OwnerId, Guid RuleSetId, string Name, string Status);
-
-record BattleResponseDto(Guid Id, Guid RunId, int Sequence, EnemyPokemonParamsDto EnemyPokemon);
-
-record CalculateDamageResponseDto(
-    AttackerParamsDto AttackerParams,
-    DefenderParamsDto DefenderParams,
-    int[] DamageRolls,    // 16段階 [0]=最小(85/100) 〜 [15]=最大(100/100)
-    int MinDamage,
-    int MaxDamage
-);
-
-record PartyStateResponseDto(Guid RunId, OwnPokemonSnapshotDto[] Snapshots);
+public sealed record AdminUserAuthorizationUpsertRequest(
+    string GoogleUserId,
+    string Role,
+    IReadOnlyList<string> Permissions);
 ```
 
 ---
 
-## 7. バリデーション
+## 6. エラー契約
 
-各エンドポイントのリクエストは FluentValidation によって検証される。
+| Status | 主なケース |
+|--------|------------|
+| `400` | 必須項目不足、形式不正、列挙値不正、catalog 外 permission、重複 permissions |
+| `401` | 未認証、無効な bearer token |
+| `403` | policy 不一致、`Member`、未登録ユーザー |
+| `404` | 対象なし、匿名から不可視な RuleSet |
+| `409` | slug 重複、参照中 RuleSet 削除、最後の Administrator 保護 |
 
-| Validator | 主な検証項目 |
-|-----------|------------|
-| `CreateRunCommandValidator` | Name 必須・256 文字以内、RuleSetId 非空 Guid |
-| `UpdateRunCommandValidator` | Name 必須、Status 有効値（Active / Completed / Archived） |
-| `CreateBattleCommandValidator` | Sequence ≥ 1、EnemyPokemon 各値必須・範囲チェック |
-| `UpdateBattleCommandValidator` | 同上 |
-| `CalculateDamageCommandValidator` | Level 1-100、Attack/Defense ≥ 1、MovePower ≥ 1、MoveCategory 有効値、TypeEffectiveness 有効倍率 |
-| `AddProgressionEventCommandValidator` | PokemonId 必須、EventType 有効値 |
+- エラー応答形式は既存どおり `ProblemDetails`
+- 公開 API の route と `RuleSetDto` shape は維持する
+
+---
+
+## 7. 監査ログ契約メモ
+
+| 対象 API | 記録タイミング | 最低記録項目 |
+|----------|----------------|--------------|
+| `POST /api/admin/rule-sets` | handler 完了時 | actor, operation, target, payload, result |
+| `PUT /api/admin/rule-sets/{id}` | handler 完了時 | actor, operation, target, payload, result |
+| `DELETE /api/admin/rule-sets/{id}` | handler 完了時 | actor, operation, target, payload, result |
+| `POST /api/admin/user-authorizations` | handler 完了時 | actor, operation, target, payload, result |
+| `PUT /api/admin/user-authorizations/{googleUserId}` | handler 完了時 | actor, operation, target, payload, result |
+| `DELETE /api/admin/user-authorizations/{googleUserId}` | handler 完了時 | actor, operation, target, payload, result |
+
+- 監査ログは API レスポンス契約には含めず、内部監査証跡として扱う
+- 業務拒否時は `result = Rejected` とし、`payload.reason` に理由を含める
