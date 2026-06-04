@@ -51,7 +51,9 @@ sequenceDiagram
 | Frontend | Node.js 20, npm |
 | CLI | PowerShell, GitHub CLI |
 | Docker | host Docker daemon を利用できる構成 |
-| VS Code 拡張 | GitHub Copilot, GitHub Copilot Chat, Docker, C#, PowerShell |
+| VS Code 拡張 | GitHub Copilot, GitHub Copilot Chat, Docker, C#, PowerShell, Draw.io Integration |
+
+`docs/domain.drawio` を Dev Container 内で直接編集できるように、VS Code 拡張 `hediet.vscode-drawio` を含める。
 
 ## 3. GitHub 権限の考え方
 
