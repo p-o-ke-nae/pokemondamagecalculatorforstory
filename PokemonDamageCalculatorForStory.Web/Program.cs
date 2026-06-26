@@ -63,19 +63,15 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(AppPolicies.ManageWeatherForecast, policy =>
     {
         policy.RequireAuthenticatedUser();
-        policy.AddRequirements(new WeatherForecastManagementRequirement());
     });
 });
 
 // MediatR 登録（Application層のHandlers自動登録）
-builder.Services.AddMediatR(cfg =>
-    cfg.RegisterServicesFromAssembly(typeof(PokemonDamageCalculatorForStory.Application.UseCases.Commands.CreateWeatherForecastCommand).Assembly));
+//builder.Services.AddMediatR(cfg =>
+//    cfg.RegisterServicesFromAssembly(typeof(PokemonDamageCalculatorForStory.Application.UseCases.Commands.CreateWeatherForecastCommand).Assembly));
 
 // Repository 登録
-builder.Services.AddScoped<IWeatherForecastRepository, WeatherForecastRepository>();
 builder.Services.AddScoped<IUserAuthorizationInfoRepository, UserAuthorizationInfoRepository>();
-builder.Services.AddScoped<IWeatherForecastAccessEvaluator, WeatherForecastAccessEvaluator>();
-builder.Services.AddScoped<IAuthorizationHandler, WeatherForecastManagementAuthorizationHandler>();
 
 // FluentValidation 登録（将来:バリデーション Pipeline を追加予定）
 // builder.Services.AddValidatorsFromAssemblyContaining<CreateWeatherForecastCommandValidator>();
