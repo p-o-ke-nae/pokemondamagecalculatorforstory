@@ -7,8 +7,8 @@ namespace PokemonDamageCalculatorForStory.Tests.Infrastructure.Repositories;
 
 public sealed class UserAuthorizationInfoRepositoryTests
 {
-    [Fact]
-    public async Task FindByGoogleUserIdAsync_Returns_Permissions()
+    [Fact(DisplayName = "UserAuthorizationInfoRepository_FindByGoogleUserIdAsync_指定したGoogleUserIdの権限とロールを返す")]
+    public async Task UserAuthorizationInfoRepository_FindByGoogleUserIdAsync_ReturnsRoleAndPermissionsForGoogleUserId()
     {
         await using var database = await InfrastructureSqlServerTestDatabase.CreateAsync();
         await using var context = database.CreateDbContext();

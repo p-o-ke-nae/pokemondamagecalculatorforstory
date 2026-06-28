@@ -8,8 +8,8 @@ namespace PokemonDamageCalculatorForStory.Tests.Infrastructure.Data;
 [Collection("DesignTimeConnectionStringResolver")]
 public sealed class DesignTimeConnectionStringResolverTests
 {
-    [Fact]
-    public void Resolve_Prefers_ConnectionString_EnvironmentVariable()
+    [Fact(DisplayName = "DesignTimeConnectionStringResolver_Resolve_ConnectionStrings環境変数を優先する")]
+    public void DesignTimeConnectionStringResolver_Resolve_PrefersConnectionStringEnvironmentVariable()
     {
         using var scope = new ResolverTestScope();
         scope.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
@@ -30,8 +30,8 @@ public sealed class DesignTimeConnectionStringResolverTests
         Assert.Equal("EnvPassword1!", builder.Password);
     }
 
-    [Fact]
-    public void Resolve_Uses_EnvironmentSpecific_AppSettings_And_Normalizes_Compose_Host()
+    [Fact(DisplayName = "DesignTimeConnectionStringResolver_Resolve_環境別appsettingsを使用しcomposeホストを正規化する")]
+    public void DesignTimeConnectionStringResolver_Resolve_UsesEnvironmentSpecificAppSettingsAndNormalizesComposeHost()
     {
         using var scope = new ResolverTestScope();
         scope.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
@@ -56,8 +56,8 @@ public sealed class DesignTimeConnectionStringResolverTests
         Assert.Equal("ComposePassword1!", builder.Password);
     }
 
-    [Fact]
-    public void Resolve_FallsBack_To_Compose_Settings_When_No_Configured_ConnectionString_Exists()
+    [Fact(DisplayName = "DesignTimeConnectionStringResolver_Resolve_構成済み接続文字列がない場合にcompose設定へフォールバックする")]
+    public void DesignTimeConnectionStringResolver_Resolve_FallsBackToComposeSettingsWhenNoConfiguredConnectionStringExists()
     {
         using var scope = new ResolverTestScope();
         scope.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
@@ -80,8 +80,8 @@ public sealed class DesignTimeConnectionStringResolverTests
         Assert.Equal("sa", builder.UserID);
     }
 
-    [Fact]
-    public void Resolve_Normalizes_Legacy_Mssql_Host_And_Placeholder_Password_On_Host()
+    [Fact(DisplayName = "DesignTimeConnectionStringResolver_Resolve_ホスト環境で旧mssqlホスト名とプレースホルダーパスワードを正規化する")]
+    public void DesignTimeConnectionStringResolver_Resolve_NormalizesLegacyMssqlHostAndPlaceholderPasswordOnHost()
     {
         using var scope = new ResolverTestScope();
         scope.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");

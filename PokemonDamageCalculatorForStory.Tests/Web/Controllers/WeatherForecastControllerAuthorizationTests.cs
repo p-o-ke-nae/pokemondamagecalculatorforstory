@@ -18,8 +18,8 @@ public class WeatherForecastControllerAuthorizationTests : IClassFixture<CustomW
         _client = factory.CreateClient();
     }
 
-    [Fact]
-    public async Task Swagger_Defines_GoogleBearer_Security_For_Protected_Endpoints()
+    [Fact(DisplayName = "Program_ConfigureSwagger_保護対象エンドポイントにGoogleBearerセキュリティを定義する")]
+    public async Task Program_ConfigureSwagger_DefinesGoogleBearerSecurityForProtectedEndpoints()
     {
         var response = await _client.GetAsync("/swagger/v1/swagger.json");
 
@@ -45,8 +45,8 @@ public class WeatherForecastControllerAuthorizationTests : IClassFixture<CustomW
         Assert.True(security.GetArrayLength() > 0);
     }
 
-    [Fact]
-    public async Task Create_Without_Token_Returns_401()
+    [Fact(DisplayName = "WeatherForecastController_Create_認証トークンなしの作成要求で401を返す")]
+    public async Task WeatherForecastController_Create_Returns401WithoutToken()
     {
         using var response = await _client.PostAsync(
             "/WeatherForecast",
@@ -61,8 +61,8 @@ public class WeatherForecastControllerAuthorizationTests : IClassFixture<CustomW
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
-    [Fact]
-    public async Task Update_By_NonOwner_Without_Permission_Returns_403()
+    [Fact(DisplayName = "WeatherForecastController_Update_権限のない非所有者の更新要求で403を返す")]
+    public async Task WeatherForecastController_Update_Returns403ForNonOwnerWithoutPermission()
     {
         using var request = new HttpRequestMessage(HttpMethod.Put, $"/WeatherForecast/{CustomWebApplicationFactory.PrivateForecastId}")
         {
@@ -81,8 +81,8 @@ public class WeatherForecastControllerAuthorizationTests : IClassFixture<CustomW
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    [Fact]
-    public async Task Update_By_Owner_Returns_200()
+    [Fact(DisplayName = "WeatherForecastController_Update_所有者の更新要求で200を返す")]
+    public async Task WeatherForecastController_Update_Returns200ForOwner()
     {
         using var request = new HttpRequestMessage(HttpMethod.Put, $"/WeatherForecast/{CustomWebApplicationFactory.PrivateForecastId}")
         {
@@ -103,8 +103,8 @@ public class WeatherForecastControllerAuthorizationTests : IClassFixture<CustomW
         Assert.Contains("Owner update", responseBody, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task Public_Get_By_Anonymous_Returns_200()
+    [Fact(DisplayName = "WeatherForecastController_GetById_匿名ユーザーの公開予報取得で200を返す")]
+    public async Task WeatherForecastController_GetById_Returns200ForAnonymousPublicRequest()
     {
         using var response = await _client.GetAsync($"/WeatherForecast/{CustomWebApplicationFactory.PublicForecastId}");
         var responseBody = await response.Content.ReadAsStringAsync();

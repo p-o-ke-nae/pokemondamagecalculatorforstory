@@ -19,6 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\PokemonDamageCalculatorForStory.Domain\PokemonDamageCalculatorForStory.Domain.csproj" />
     <ProjectReference Include="..\PokemonDamageCalculatorForStory.Web\PokemonDamageCalculatorForStory.Web.csproj" />
     <ProjectReference Include="..\PokemonDamageCalculatorForStory.Infrastructure\PokemonDamageCalculatorForStory.Infrastructure.csproj" />
   </ItemGroup>
