@@ -14,13 +14,13 @@ public class DamageContext
     /// <param name="battle">戦闘情報。</param>
     /// <param name="attacker">攻撃側ポケモン。</param>
     /// <param name="defender">防御側ポケモン。</param>
-    /// <param name="move">使用する技。</param>
+    /// <param name="moveCategory">技分類。</param>
     /// <param name="moveTargetCount">対象数。</param>
-    public DamageContext(BattlePokemon attacker, BattlePokemon defender, Move move, MoveTargetCount moveTargetCount)
+    public DamageContext(BattlePokemon attacker, BattlePokemon defender, MoveCategory moveCategory, MoveTargetCount moveTargetCount)
     {
         Attacker = attacker;
         Defender = defender;
-        Move = move;
+        MoveCategory = moveCategory;
         MoveTargetCount = moveTargetCount;
     }
 
@@ -30,12 +30,12 @@ public class DamageContext
     /// <summary>防御側ポケモン。</summary>
     public BattlePokemon Defender { get; }
 
-    /// <summary>使用する技。</summary>
-    public Move Move { get; }
-
     /// <summary>対象数。</summary>
     public MoveTargetCount MoveTargetCount { get; }
-    
+
+    /// <summary>技分類。</summary>
+    public MoveCategory MoveCategory { get; }
+
     /// <summary>
     /// 指定された攻撃値を参照するポケモンを取得する。
     /// </summary>

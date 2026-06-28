@@ -40,12 +40,8 @@ public class Battle
     /// <returns>ダメージ結果。</returns>
     public DamageResult CalculateDamage(BattlePokemon attacker, BattlePokemon defender, Move move)
     {
-        var context = new DamageContext(attacker, defender, move, new MoveTargetCount(1));
-        var spec = new DamageSpec(
-            StatSelector.Attack,
-            StatSelector.Defense,
-            move.Power,
-            fixedDamage: 0);
+        var context = new DamageContext(attacker, defender, move.Category, new MoveTargetCount(1));
+        var spec = move.CreateBaseDamageSpec();
 
         foreach (var effect in move.DamageEffects)
         {
@@ -63,7 +59,7 @@ public class Battle
     /// <param name="move">使用する技。</param>
     public void ApplyBattleEffects(BattlePokemon attacker, BattlePokemon defender, Move move)
     {
-        var context = new DamageContext(attacker, defender, move, new MoveTargetCount(1));
+        var context = new DamageContext(attacker, defender, move.Category, new MoveTargetCount(1));
 
         foreach (var effect in move.BattleEffects)
         {

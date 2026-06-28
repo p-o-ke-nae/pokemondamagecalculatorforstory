@@ -1,6 +1,4 @@
-using PokemonDamageCalculatorForStory.Domain.ValueObjects;
-
-namespace PokemonDamageCalculatorForStory.Domain.Entities;
+namespace PokemonDamageCalculatorForStory.Domain.ValueObjects;
 
 /// <summary>
 /// 戦場に共有される環境状態を表す。

@@ -53,7 +53,9 @@ classDiagram
 
     class Ability {
         +name: string
-        +abilityEffects: IAbilityEffect[]
+        +abilityDamageEffects: IAbilityDamageEffect[]
+        +abilityStatusAilmentEffects: IAbilityStatusAilmentEffect[]
+        +abilityAttackStatEffects: IAbilityAttackStatEffect[]
     }
 
     class PokemonTyping {
@@ -98,6 +100,7 @@ classDiagram
         +targetScope: TargetScope
         +MoveDamageEffects: IMoveDamageEffect[]
         +MoveBattleEffects: IMoveBattleEffect[]
+        +CreateBaseDamageSpec(): DamageSpec
     }
 
     class Field {
@@ -107,10 +110,10 @@ classDiagram
     }
 
     class DamageContext {
-        +attacker: BattlePokemon
-        +defender: BattlePokemon
-        +move: Move
-        +moveTargetCount: MoveTargetCount
+        +Attacker: BattlePokemon
+        +Defender: BattlePokemon
+        +MoveTargetCount: MoveTargetCount
+        +MoveCategory: MoveCategory
         +GetAttackStatPokemon(DamageStatOwner): BattlePokemon
     }
 
@@ -137,59 +140,96 @@ classDiagram
         <<interface>>
         +apply(DamageSpec, DamageContext): DamageSpec
     }
-
-    class IMoveBattleEffect {
-        <<interface>>
-        +apply(target, DamageContext): void
-    }
-
-    class StandardMoveDamageEffect
     class SwapAttackDefenseEffect
     class UseTargetAttackEffect
     class FixedMoveDamageEffect
     class SpreadMovePowerEffect
     class WeightDependentPowerEffect
+    class IMoveBattleEffect {
+        <<interface>>
+        +apply(target, DamageContext): void
+    }
     class TypeChangeEffect {
         +newTypes: PokemonType[]
         +apply(target, DamageContext): void
     }
 
-    class BurnAttackCorrectionEvaluator{
-        +evaluate(DamageSpec, DamageContext): BurnAttackCorrection
+    class IAbilityDamageEffect {
+        <<interface>>
     }
-    class BurnAttackCorrection{
+    class IAbilityStatusAilmentEffect {
+        <<interface>>
+        +ignoresPrimaryStatusAilmentPenalty(BattlePokemon, PrimaryStatusAilment, DamageSpec, DamageContext): bool
+    }
+    class IAbilityAttackStatEffect {
+        <<interface>>
+    }
+
+    class BurnAttackModifierEvaluator{
+        +evaluate(DamageSpec, DamageContext): BurnAttackModifier
+    }
+    class BurnAttackModifier{
         +apply(int): int
     }
 
     Battle --> Field
     Battle --> IPokemonDamagePolicy
-    Battle --> DamageContext
-    Battle --> DamageResult
+    Battle ..> DamageContext
+    Battle ..> DamageResult
+
     BattlePokemon --> PokemonTyping
     BattlePokemon --> StatusAilment
     BattlePokemon --> Ability
+
     StatusAilment --> PrimaryStatusAilment
     StatusAilment --> AdditionalBattleCondition
+
     DamageContext --> BattlePokemon
-    DamageContext --> Move
+    DamageContext --> MoveCategory
+
     Move --> IMoveDamageEffect
     Move --> IMoveBattleEffect
-    IMoveDamageEffect --> DamageSpec
-    IPokemonDamagePolicy --> DamageSpec
+    Move --> MoveCategory
+    Move ..> DamageSpec
+
+    Ability --> IAbilityDamageEffect
+    Ability --> IAbilityStatusAilmentEffect
+    Ability --> IAbilityAttackStatEffect
+
+    IMoveDamageEffect ..> DamageSpec
+    IMoveDamageEffect ..> DamageContext
+    IPokemonDamagePolicy ..> DamageSpec
+    IPokemonDamagePolicy ..> DamageContext
+    IPokemonDamagePolicy ..> DamageResult
+
+    IAbilityStatusAilmentEffect ..> BattlePokemon
+    IAbilityStatusAilmentEffect ..> PrimaryStatusAilment
+    IAbilityStatusAilmentEffect ..> DamageSpec
+    IAbilityStatusAilmentEffect ..> DamageContext
+
     PokemonDamagePolicyGen1 ..|> IPokemonDamagePolicy
     PokemonDamagePolicyGen3 ..|> IPokemonDamagePolicy
-    StandardMoveDamageEffect ..|> IMoveDamageEffect
+
     SwapAttackDefenseEffect ..|> IMoveDamageEffect
     UseTargetAttackEffect ..|> IMoveDamageEffect
     FixedMoveDamageEffect ..|> IMoveDamageEffect
     SpreadMovePowerEffect ..|> IMoveDamageEffect
     WeightDependentPowerEffect ..|> IMoveDamageEffect
     TypeChangeEffect ..|> IMoveBattleEffect
-    IMoveBattleEffect --> BattlePokemon
-    BurnAttackCorrectionEvaluator --> BurnAttackCorrection
-    BurnAttackCorrectionEvaluator --> DamageSpec
-    BurnAttackCorrectionEvaluator --> DamageContext
+
+    IMoveBattleEffect ..> BattlePokemon
+    IMoveBattleEffect ..> DamageContext
+
+    BurnAttackModifierEvaluator ..> BurnAttackModifier
+    BurnAttackModifierEvaluator ..> DamageSpec
+    BurnAttackModifierEvaluator ..> DamageContext
+    BurnAttackModifierEvaluator ..> IAbilityStatusAilmentEffect
+
+    PokemonDamagePolicyGen3 ..> BurnAttackModifierEvaluator
 ```
+
+図中の実線は保持・構成としての関連を表し、点線はメソッド引数、戻り値、計算時参照による依存を表す。
+これにより、`IAbilityStatusAilmentEffect` まわりのような「実装上は保持していないが署名上は参照する」関係を、循環の少ない形で読めるようにしている。
 
 ## みずびたしの表現
 

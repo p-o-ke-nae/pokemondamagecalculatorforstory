@@ -19,7 +19,7 @@ public class PokemonDamagePolicyGen1 : IPokemonDamagePolicy
             return new DamageResult([spec.FixedDamage]);
         }
 
-        var burnCorrection = BurnAttackCorrectionEvaluator.Evaluate(spec, context);
+        var burnCorrection = BurnAttackModifierEvaluator.Evaluate(spec, context);
         var attackValue = context.Attacker.Stats.Get(spec.AttackSource);
         var correctedAttackValue = burnCorrection.ApplyTo(attackValue);
         var defenseValue = context.Defender.Stats.Get(spec.DefenseSource);

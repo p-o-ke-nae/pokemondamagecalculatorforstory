@@ -1,7 +1,8 @@
+using PokemonDamageCalculatorForStory.Domain.DamageCalculation;
 using PokemonDamageCalculatorForStory.Domain.DamageCalculation.MoveEffects;
-using PokemonDamageCalculatorForStory.Domain.ValueObjects;
+using System.Diagnostics;
 
-namespace PokemonDamageCalculatorForStory.Domain.Entities;
+namespace PokemonDamageCalculatorForStory.Domain.ValueObjects;
 
 /// <summary>
 /// 戦闘で使用される技を表す。
@@ -59,4 +60,34 @@ public class Move
 
     /// <summary>戦闘状態効果一覧。</summary>
     public IMoveBattleEffect[] BattleEffects => _battleEffects.ToArray();
+
+    /// <summary>
+    /// ダメージ計算用の DamageSpec を作成する。
+    /// </summary>
+    /// <returns></returns>
+    /// <exception cref="InvalidOperationException"></exception>
+    /// <exception cref="UnreachableException"></exception>
+    public DamageSpec CreateBaseDamageSpec()
+    {
+        return Category switch
+        {
+            MoveCategory.Physical => new DamageSpec(
+                StatSelector.Attack,
+                StatSelector.Defense,
+                Power,
+                fixedDamage: 0),
+
+            MoveCategory.Special => new DamageSpec(
+                StatSelector.SpecialAttack,
+                StatSelector.SpecialDefense,
+                Power,
+                fixedDamage: 0),
+
+            MoveCategory.Status => throw new InvalidOperationException(
+                $"変化技 {Name} はダメージ計算用の DamageSpec を持ちません。"),
+
+            _ => throw new UnreachableException(
+                $"未対応の MoveCategory: {Category}")
+        };
+    }
 }

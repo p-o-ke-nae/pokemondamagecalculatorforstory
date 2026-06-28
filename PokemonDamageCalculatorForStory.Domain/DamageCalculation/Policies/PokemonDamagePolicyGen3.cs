@@ -19,12 +19,17 @@ public class PokemonDamagePolicyGen3 : IPokemonDamagePolicy
         }
 
         var attackValue = context.GetAttackStatPokemon(spec.AttackStatOwner).Stats.Get(spec.AttackSource);
+
+        // 攻撃側のポケモンの特性による攻撃補正
+        var attackModifier = AttackStatModifierEvaluator.Evaluate(spec, context);
+        attackValue = attackModifier.ApplyTo(attackValue);
+
         var defenseValue = context.Defender.Stats.Get(spec.DefenseSource);
         var damage = CalculateBaseDamage(context.Attacker.Level.Value, spec.PowerOverride.Value, attackValue, defenseValue);
 
         // やけどによる攻撃力補正
-        var burnCorrection = BurnAttackCorrectionEvaluator.Evaluate(spec, context);
-        damage = burnCorrection.ApplyTo(damage);
+        var burnModifier = BurnAttackModifierEvaluator.Evaluate(spec, context);
+        damage = burnModifier.ApplyTo(damage);
 
         return new DamageResult([damage]);
     }
